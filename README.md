@@ -610,3 +610,26 @@ where:
 
 These counters are scoped to the current Skyscanner search page. They reset when the Skyscanner URL changes. A full browser-page reload naturally resets them as well because the userscript state is recreated.
 
+
+
+### Compact collector panel (Tampermonkey 1.6.10)
+
+The large/bold collector state now shows only the main state name:
+
+```text
+Loading
+Collecting
+Sending
+Complete
+Override
+Error
+```
+
+The detailed line below remains the operational status. Completion now uses:
+
+```text
+All results uploaded
+```
+
+The panel no longer has a fixed 300 px width. It shrink-wraps its content, with the non-wrapping `Status` and `Backend` lines acting as the main width anchors, while still respecting the available viewport width.
+
