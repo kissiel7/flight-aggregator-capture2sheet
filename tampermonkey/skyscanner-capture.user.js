@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.0.0
+// @version      1.1.0
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -37,7 +37,15 @@
     lastSendTime: 0,
     totalServerInserted: 0,
     totalServerUpdated: 0,
-    lastStatus: 'Starting'
+    lastStatus: 'Starting',
+    lastCandidateCount: 0,
+    lastPendingCount: 0,
+    lastHttpStatus: '',
+    lastResponse: '',
+    lastError: '',
+    backendHealth: 'not tested',
+    lastScanAt: '',
+    lastSendAt: ''
   };
 
   function log(...args) {
@@ -463,6 +471,8 @@
 
   function scanPage() {
     const candidates = findCandidateElements();
+    state.lastCandidateCount = candidates.length;
+    state.lastScanAt = new Date().toLocaleTimeString();
     let changed = 0;
 
     for (const element of candidates) {
@@ -482,7 +492,11 @@
       }
     }
 
-    state.lastStatus = `Found ${state.discovered.size}`;
+    state.lastPendingCount = getResultsNeedingSend().length;
+    state.lastStatus =
+      candidates.length === 0
+        ? 'No result cards detected'
+        : `Extracted ${state.discovered.size}`;
     updateBadge();
 
     if (changed > 0) {
@@ -522,7 +536,14 @@
     }
 
     const pending = getResultsNeedingSend();
-    if (!pending.length) return;
+    state.lastPendingCount = pending.length;
+    updateBadge();
+
+    if (!pending.length) {
+      state.lastStatus = 'Nothing pending';
+      updateBadge();
+      return;
+    }
 
     const sinceLastSend = Date.now() - state.lastSendTime;
 
@@ -553,14 +574,16 @@
 
     state.sending = true;
     state.lastSendTime = Date.now();
+    state.lastSendAt = new Date().toLocaleTimeString();
     state.lastStatus = `Sending ${pending.length}`;
+    state.lastError = '';
     updateBadge();
 
     const payload = {
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.0.0',
+        version: '1.1.0',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -578,6 +601,8 @@
 
       onload(response) {
         state.sending = false;
+        state.lastHttpStatus = String(response.status || '');
+        state.lastResponse = String(response.responseText || '').slice(0, 500);
 
         try {
           const body = JSON.parse(response.responseText);
@@ -597,7 +622,11 @@
 
           state.totalServerInserted += Number(body.inserted || 0);
           state.totalServerUpdated += Number(body.updated || 0);
-          state.lastStatus = `Saved ${pending.length}`;
+          state.lastPendingCount = getResultsNeedingSend().length;
+          state.lastStatus =
+            `Saved: +${Number(body.inserted || 0)} new, ` +
+            `${Number(body.updated || 0)} updated`;
+          state.lastError = '';
           updateBadge();
 
           log('Server result:', body);
@@ -607,6 +636,7 @@
           }
         } catch (error) {
           state.lastStatus = 'Server error';
+          state.lastError = String(error && error.message ? error.message : error);
           updateBadge();
 
           console.error(
@@ -620,6 +650,7 @@
       onerror(error) {
         state.sending = false;
         state.lastStatus = 'Network error';
+        state.lastError = JSON.stringify(error || {});
         updateBadge();
         console.error('[Skyscanner -> Sheets] Network error:', error);
       },
@@ -627,6 +658,7 @@
       ontimeout() {
         state.sending = false;
         state.lastStatus = 'Timeout';
+        state.lastError = 'POST request timed out after 30 seconds';
         updateBadge();
         console.error('[Skyscanner -> Sheets] Request timeout');
       }
@@ -635,32 +667,41 @@
 
   let badge = null;
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function statusSymbol() {
+    if (state.sending) return '↗';
+    if (/error|timeout|unauthorized|configure/i.test(state.lastStatus)) return '⚠';
+    if (/saved|extracted|nothing pending/i.test(state.lastStatus)) return '✓';
+    return '•';
+  }
+
   function createBadge() {
     badge = document.createElement('div');
     badge.id = 'skyscanner-sheet-collector-status';
 
     Object.assign(badge.style, {
       position: 'fixed',
-      right: '16px',
-      bottom: '16px',
+      right: '14px',
+      bottom: '14px',
       zIndex: '2147483647',
-      padding: '8px 11px',
-      background: 'rgba(0, 0, 0, 0.78)',
-      color: 'white',
-      borderRadius: '7px',
+      width: '300px',
+      padding: '12px',
+      background: 'rgba(20, 24, 31, 0.95)',
+      color: '#fff',
+      border: '1px solid rgba(255,255,255,.25)',
+      borderRadius: '10px',
       fontFamily: 'Arial, sans-serif',
       fontSize: '12px',
-      lineHeight: '1.4',
-      cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,.25)',
-      userSelect: 'none'
-    });
-
-    badge.title = 'Click to scan Skyscanner results now';
-
-    badge.addEventListener('click', () => {
-      scanPage();
-      sendPendingResults();
+      lineHeight: '1.45',
+      boxShadow: '0 4px 18px rgba(0,0,0,.35)',
+      userSelect: 'text'
     });
 
     document.body.appendChild(badge);
@@ -670,11 +711,108 @@
   function updateBadge() {
     if (!badge) return;
 
-    badge.textContent =
-      'Sheets: ' +
-      state.lastStatus +
-      ' | visible ' +
-      state.discovered.size;
+    const pending = getResultsNeedingSend().length;
+    state.lastPendingCount = pending;
+
+    const errorLine = state.lastError
+      ? `<div style="margin-top:6px;color:#ffd0d0"><b>Error:</b> ${escapeHtml(state.lastError)}</div>`
+      : '';
+
+    badge.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:7px">
+        ${statusSymbol()} Skyscanner → Sheets
+      </div>
+
+      <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
+      <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
+      <div><b>Results extracted:</b> ${state.discovered.size}</div>
+      <div><b>Pending:</b> ${pending}</div>
+      <div><b>Inserted / updated:</b> ${state.totalServerInserted} / ${state.totalServerUpdated}</div>
+      <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
+      <div><b>HTTP:</b> ${escapeHtml(state.lastHttpStatus || '-')}</div>
+      <div><b>Last scan:</b> ${escapeHtml(state.lastScanAt || '-')}</div>
+      <div><b>Last send:</b> ${escapeHtml(state.lastSendAt || '-')}</div>
+      ${errorLine}
+
+      <div style="display:flex;gap:6px;margin-top:9px">
+        <button id="fac2s-scan" style="cursor:pointer;padding:4px 7px">Scan now</button>
+        <button id="fac2s-send" style="cursor:pointer;padding:4px 7px">Send now</button>
+        <button id="fac2s-test" style="cursor:pointer;padding:4px 7px">Test backend</button>
+      </div>
+    `;
+
+    badge.querySelector('#fac2s-scan')?.addEventListener('click', event => {
+      event.stopPropagation();
+      scanPage();
+    });
+
+    badge.querySelector('#fac2s-send')?.addEventListener('click', event => {
+      event.stopPropagation();
+      scanPage();
+      sendPendingResults();
+    });
+
+    badge.querySelector('#fac2s-test')?.addEventListener('click', event => {
+      event.stopPropagation();
+      testBackend();
+    });
+  }
+
+  function testBackend() {
+    if (!WEB_APP_URL || WEB_APP_URL.includes('PASTE_')) {
+      state.backendHealth = 'WEB_APP_URL not configured';
+      state.lastStatus = 'Configure WEB_APP_URL';
+      updateBadge();
+      return;
+    }
+
+    state.backendHealth = 'testing...';
+    state.lastError = '';
+    updateBadge();
+
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url: WEB_APP_URL,
+      timeout: 20000,
+
+      onload(response) {
+        state.lastHttpStatus = String(response.status || '');
+        state.lastResponse = String(response.responseText || '').slice(0, 500);
+
+        try {
+          const body = JSON.parse(response.responseText);
+
+          if (body.ok) {
+            state.backendHealth =
+              'OK: ' +
+              (body.spreadsheet || 'backend') +
+              (body.sheet ? ' / ' + body.sheet : '');
+          } else {
+            state.backendHealth = 'backend returned error';
+            state.lastError = body.error || 'Unknown backend error';
+          }
+        } catch (error) {
+          state.backendHealth = 'invalid response';
+          state.lastError =
+            'GET returned non-JSON: ' +
+            String(response.responseText || '').slice(0, 180);
+        }
+
+        updateBadge();
+      },
+
+      onerror(error) {
+        state.backendHealth = 'network error';
+        state.lastError = JSON.stringify(error || {});
+        updateBadge();
+      },
+
+      ontimeout() {
+        state.backendHealth = 'timeout';
+        state.lastError = 'Backend health check timed out';
+        updateBadge();
+      }
+    });
   }
 
   function startObserver() {
@@ -734,6 +872,7 @@
     watchUrl();
 
     setTimeout(scanPage, 1500);
+    setTimeout(testBackend, 2500);
     setInterval(scanPage, 15000);
   }
 
