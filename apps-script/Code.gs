@@ -11,35 +11,45 @@ const CONFIG = {
   API_KEY_PROPERTY: 'SKYSCANNER_API_KEY'
 };
 
-const HEADERS = [
-  'origin',
-  'destination',
-  'outbound_date',
-  'depart_time',
-  'inbound_date',
-  'arrive_time',
-  'duration',
-  'stops',
-  'price',
-  'total_price',
-  'currency',
-  'airlines',
-  'self_transfer',
-  'adults',
-  'children',
-  'cabin',
-  'search_url',
-  'dedupe_key',
-  'itinerary_key',
-  'first_seen',
-  'last_seen',
-  'seen_count',
-  'captured_at_client',
-  'source',
-  'price_text',
-  'config_url',
-  'raw_text'
+const SCHEMA = [
+  { header: 'Org', field: 'origin' },
+  { header: 'Dst', field: 'destination' },
+
+  { header: 'Out_DayTimeD', field: 'out_departure_dt' },
+  { header: 'Out_DayTimeL', field: 'out_arrival_dt' },
+  { header: 'Out_Dur', field: 'out_duration' },
+  { header: 'Out_Stop', field: 'out_stops' },
+  { header: 'Out_Airlines', field: 'out_airlines' },
+  { header: 'Out_Self_T', field: 'out_self_transfer' },
+
+  { header: 'In_DayTimeD', field: 'in_departure_dt' },
+  { header: 'In_DayTimeL', field: 'in_arrival_dt' },
+  { header: 'In_Dur', field: 'in_duration' },
+  { header: 'In_Stop', field: 'in_stops' },
+  { header: 'In_Airlines', field: 'in_airlines' },
+  { header: 'In_Self_T', field: 'in_self_transfer' },
+
+  { header: 'Price_PP', field: 'price' },
+  { header: 'Price_Total', field: 'total_price' },
+  { header: 'Curr', field: 'currency' },
+  { header: 'AD', field: 'adults' },
+  { header: 'CH', field: 'children' },
+  { header: 'cabin', field: 'cabin' },
+
+  { header: 'Search_URL', field: 'search_url' },
+  { header: 'source', field: 'source' },
+  { header: 'first_seen', field: 'first_seen' },
+  { header: 'last_seen', field: 'last_seen' },
+  { header: 'seen_count', field: 'seen_count' },
+  { header: 'captured_at_client', field: 'captured_at_client' },
+  { header: 'price_text', field: 'price_text' },
+  { header: 'dedupe_key', field: 'dedupe_key' },
+  { header: 'itinerary_key', field: 'itinerary_key' },
+  { header: 'config_url', field: 'config_url' },
+  { header: 'raw_text', field: 'raw_text' }
 ];
+
+const HEADERS = SCHEMA.map(column => column.header);
 
 function setupSkyscannerCollector() {
   const spreadsheet = getSpreadsheetByExactName_();
@@ -259,7 +269,10 @@ function getSpreadsheetByExactName_() {
 }
 
 function resultToRow_(result) {
-  return HEADERS.map(header => {
+  return SCHEMA.map(column => {
+    const header = column.header;
+    const field = column.field;
+
     if (
       header === 'first_seen' ||
       header === 'last_seen' ||
@@ -268,7 +281,7 @@ function resultToRow_(result) {
       return '';
     }
 
-    const value = result[header];
+    const value = result[field];
 
     if (value === undefined || value === null) {
       return '';
@@ -437,12 +450,8 @@ function formatSheet_(sheet) {
   sheet.setFrozenRows(1);
 
   const dataRowCount = Math.max(sheet.getMaxRows() - 1, 1);
+  const column = name => HEADERS.indexOf(name) + 1;
 
-  /*
-   * Reset data-cell number formats first. This is essential after a
-   * column-order migration; otherwise a time/date format left behind by
-   * an old column can be applied to a completely different field.
-   */
   sheet
     .getRange(2, 1, dataRowCount, HEADERS.length)
     .setNumberFormat('@');
@@ -451,9 +460,18 @@ function formatSheet_(sheet) {
     .getRange(1, 1, 1, HEADERS.length)
     .setFontWeight('bold');
 
-  const column = name => HEADERS.indexOf(name) + 1;
+  for (const name of ['Price_PP', 'Price_Total']) {
+    sheet
+      .getRange(2, column(name), dataRowCount, 1)
+      .setNumberFormat('#,##0.00');
+  }
 
-  // Server timestamps are real date/time values.
+  for (const name of ['Out_Stop', 'In_Stop', 'AD', 'CH', 'seen_count']) {
+    sheet
+      .getRange(2, column(name), dataRowCount, 1)
+      .setNumberFormat('0');
+  }
+
   sheet
     .getRange(2, column('first_seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
@@ -462,49 +480,43 @@ function formatSheet_(sheet) {
     .getRange(2, column('last_seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
-  // Numeric fields.
-  sheet
-    .getRange(2, column('price'), dataRowCount, 1)
-    .setNumberFormat('#,##0.00');
+  const widths = {
+    Org: 55,
+    Dst: 55,
+    Out_DayTimeD: 118,
+    Out_DayTimeL: 118,
+    Out_Dur: 68,
+    Out_Stop: 50,
+    Out_Airlines: 120,
+    Out_Self_T: 58,
+    In_DayTimeD: 118,
+    In_DayTimeL: 118,
+    In_Dur: 68,
+    In_Stop: 50,
+    In_Airlines: 120,
+    In_Self_T: 58,
+    Price_PP: 76,
+    Price_Total: 86,
+    Curr: 52,
+    AD: 38,
+    CH: 38,
+    cabin: 68,
+    Search_URL: 180,
+    source: 75,
+    first_seen: 125,
+    last_seen: 125,
+    seen_count: 68,
+    captured_at_client: 145,
+    price_text: 82,
+    dedupe_key: 210,
+    itinerary_key: 185,
+    config_url: 180,
+    raw_text: 320
+  };
 
-  sheet
-    .getRange(2, column('total_price'), dataRowCount, 1)
-    .setNumberFormat('#,##0.00');
-
-  for (const name of ['stops', 'adults', 'children', 'seen_count']) {
-    sheet
-      .getRange(2, column(name), dataRowCount, 1)
-      .setNumberFormat('0');
-  }
-
-  // Explicitly keep route/date/time fields as text.
-  for (const name of [
-    'origin',
-    'destination',
-    'outbound_date',
-    'depart_time',
-    'inbound_date',
-    'arrive_time',
-    'duration',
-    'cabin',
-    'currency',
-    'airlines',
-    'captured_at_client'
-  ]) {
-    sheet
-      .getRange(2, column(name), dataRowCount, 1)
-      .setNumberFormat('@');
-  }
-
-  sheet.setColumnWidth(column('origin'), 80);
-  sheet.setColumnWidth(column('destination'), 100);
-  sheet.setColumnWidth(column('price'), 90);
-  sheet.setColumnWidth(column('total_price'), 100);
-  sheet.setColumnWidth(column('currency'), 70);
-  sheet.setColumnWidth(column('airlines'), 180);
-  sheet.setColumnWidth(column('search_url'), 250);
-  sheet.setColumnWidth(column('config_url'), 250);
-  sheet.setColumnWidth(column('raw_text'), 400);
+  Object.entries(widths).forEach(([name, width]) => {
+    sheet.setColumnWidth(column(name), width);
+  });
 }
 
 function jsonResponse_(object) {
