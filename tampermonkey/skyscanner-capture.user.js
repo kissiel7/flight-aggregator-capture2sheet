@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.1.0
+// @version      1.2.0
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -171,6 +171,14 @@
 
   function findCandidateElements() {
     const candidates = new Set();
+
+    /*
+     * Capture every flight-result / connection card currently rendered
+     * by Skyscanner, not only the cheapest or first result. Skyscanner
+     * lazy-loads and may virtualize results, so cards that appear later
+     * while scrolling are picked up by MutationObserver and accumulated
+     * in state.discovered.
+     */
 
     document.querySelectorAll(
       '[aria-label*="Flight option"],' +
@@ -479,7 +487,20 @@
       const result = extractResult(element);
       if (!result) continue;
 
-      const serialized = JSON.stringify(result);
+      /*
+       * Compare stable result content only.
+       *
+       * captured_at_client is deliberately excluded from the comparison;
+       * otherwise every periodic scan would look "changed" only because
+       * the timestamp is new, causing needless re-sends and inflated
+       * seen_count values in the spreadsheet.
+       */
+      const comparable = {
+        ...result,
+        captured_at_client: ''
+      };
+
+      const serialized = JSON.stringify(comparable);
       const previous = state.discovered.get(result.dedupe_key);
 
       if (!previous || previous.serialized !== serialized) {
@@ -583,7 +604,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.1.0',
+        version: '1.2.0',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -615,7 +636,10 @@
             if (state.discovered.has(result.dedupe_key)) {
               state.sentSnapshot.set(
                 result.dedupe_key,
-                JSON.stringify(result)
+                JSON.stringify({
+                  ...result,
+                  captured_at_client: ''
+                })
               );
             }
           }
