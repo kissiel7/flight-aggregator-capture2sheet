@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.1
+// @version      1.6.2
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -50,6 +50,7 @@
     lastResultChangeAt: 0,
     lastSuccessfulSendAt: 0,
     ready: false,
+    pageCompleted: false,
     readyTimer: null
   };
 
@@ -948,6 +949,7 @@
         stableNow >= CONFIG.readyStabilizeMs
       ) {
         state.ready = true;
+        state.pageCompleted = true;
         state.lastStatus = 'Complete — safe to leave page';
         updateBadge();
         return;
@@ -980,6 +982,24 @@
         color: '#1a73e8',
         symbol: '●',
         label: 'Sending — keep page open'
+      };
+    }
+
+    const pending = getResultsNeedingSend().length;
+
+    if (state.pageCompleted && pending === 0) {
+      return {
+        color: '#188038',
+        symbol: '●',
+        label: 'Complete — safe to leave page'
+      };
+    }
+
+    if (state.pageCompleted && pending > 0) {
+      return {
+        color: '#f9ab00',
+        symbol: '●',
+        label: 'New results detected — keep page open'
       };
     }
 
@@ -1038,19 +1058,36 @@
 
     if (changed > 0) {
       state.lastResultChangeAt = Date.now();
-      state.ready = false;
 
       if (state.readyTimer) {
         clearTimeout(state.readyTimer);
         state.readyTimer = null;
       }
 
-      state.lastStatus = `Collecting ${state.discovered.size} results`;
-      log('New/changed results:', changed, 'total:', state.discovered.size);
-      scheduleSend();
-      scheduleReadyCheck();
+      /*
+       * After this URL has completed once, do not fall back to a generic
+       * "loading" state just because Skyscanner's DOM changed.
+       *
+       * Only unsent extracted data makes the page temporarily unsafe.
+       */
+      if (state.lastPendingCount > 0) {
+        state.ready = false;
+        state.lastStatus = state.pageCompleted
+          ? 'New results detected'
+          : `Collecting ${state.discovered.size} results`;
+
+        log('New/changed results:', changed, 'total:', state.discovered.size);
+        scheduleSend();
+        scheduleReadyCheck();
+      } else if (state.pageCompleted) {
+        state.ready = true;
+        state.lastStatus = 'Complete — safe to leave page';
+      }
     } else if (candidates.length === 0 && state.discovered.size === 0) {
       state.lastStatus = 'Waiting for Skyscanner results';
+    } else if (state.pageCompleted && state.lastPendingCount === 0) {
+      state.ready = true;
+      state.lastStatus = 'Complete — safe to leave page';
     } else if (!state.ready && !state.sending) {
       state.lastStatus = 'Waiting for results to settle';
       scheduleReadyCheck();
@@ -1094,7 +1131,13 @@
     updateBadge();
 
     if (!pending.length) {
-      state.lastStatus = 'Nothing pending';
+      if (state.pageCompleted) {
+        state.ready = true;
+        state.lastStatus = 'Complete — safe to leave page';
+      } else {
+        state.lastStatus = 'Nothing pending';
+      }
+
       updateBadge();
       return;
     }
@@ -1138,7 +1181,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.1',
+        version: '1.6.2',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1395,6 +1438,7 @@
       state.sentSnapshot.clear();
       state.lastResultChangeAt = Date.now();
       state.lastSuccessfulSendAt = 0;
+      state.pageCompleted = false;
       clearReadyState('New search — waiting for results');
 
       setTimeout(scanPage, 2000);
@@ -1422,6 +1466,7 @@
   function init() {
     log('Starting');
     state.lastResultChangeAt = Date.now();
+    state.pageCompleted = false;
     createBadge();
     clearReadyState('Waiting for Skyscanner results');
     startObserver();
