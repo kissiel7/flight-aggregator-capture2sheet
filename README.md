@@ -330,92 +330,65 @@ The current implementation uses separate `Out_*` and `In_*` fields, combined ISO
 
 ## Current compact result schema
 
-The live `Skyscanner Results` tab uses compact display-oriented headers:
+The live `Skyscanner Results` tab uses the human-friendly display headers below:
 
 ```text
 Org
 Dst
-Out_DayTimeD
-Out_DayTimeL
-Out_Dur
-Out_Stop
-Out_Airlines
-Out_Self_T
-In_DayTimeD
-In_DayTimeL
-In_Dur
-In_Stop
-In_Airlines
-In_Self_T
-Price_PP
-Price_Total
+ODeparture
+OArrival
+ODuration
+OSt
+OStops
+OAirlines
+OSelf Tr
+IDeparture
+IArrival
+IDuration
+ISt
+IStops
+IAirlines
+ISelf Tr
+Price PP
+Price Total
 Curr
 AD
 CH
 cabin
-Search_URL
-source
-first_seen
-last_seen
-seen_count
-captured_at_client
-price_text
-dedupe_key
-itinerary_key
-config_url
-raw_text
+Search URL
+Source
+First seen
+Last seen
+Seen Count
+Captured at client
+Price text
+Dedupe key
+Itineriary key
+Config URL
+Raw text
 ```
 
-Datetime fields use ISO ordering in one cell:
+Datetime fields use compact ISO ordering:
 
 ```text
 YYYY-MM-DD HH:mm
 ```
 
-Examples:
+`OSt` / `ISt` are the outbound/inbound stop counts.
+
+`OStops` / `IStops` contain the corresponding stop-airport IATA codes from the Skyscanner result card:
 
 ```text
-Out_DayTimeD = 2026-10-18 20:50
-Out_DayTimeL = 2026-10-19 01:10
-In_DayTimeD  = 2026-10-30 16:40
-In_DayTimeL  = 2026-10-30 22:35
+OSt = 1   OStops = BCN
+OSt = 2   OStops = AMS,MAD
+ISt = 1   IStops = MAD
 ```
 
-For one-way results, all `In_*` fields remain blank.
+Direct legs use stop count `0` and leave the stop-airport field blank.
 
-The spreadsheet contains a `Skyscanner Examples` tab with one-way and round-trip examples using the same schema.
+Tampermonkey 1.6.6 extracts these codes from the compact result text rendered on the initial Skyscanner page. Existing captured rows were backfilled where the stop airport codes were recoverable from `Raw text`.
 
-### Compact human-friendly keys
-
-Opaque Skyscanner config identifiers are retained in `config_url`, but the working keys are human-readable.
-
-One-way example:
-
-```text
-itinerary_key = BER-TFS_2610182050_LAE
-dedupe_key    = BER-TFS_2610182050_LAE_A3C0E
-```
-
-Round-trip example:
-
-```text
-itinerary_key = BER-TFS_2610182050_2610301640_K7M
-dedupe_key    = BER-TFS_2610182050_2610301640_K7M_A3C0E
-```
-
-Meaning:
-
-- `BER-TFS` = actual outbound airport pair
-- `2610182050` = outbound departure in `YYMMDDHHmm`
-- the optional second timestamp = inbound departure in `YYMMDDHHmm`
-- the final three alphanumeric characters are a base-36 tie-breaker derived from the stable Skyscanner itinerary/config identity
-- `A3C0E` = 3 adults, 0 children, economy
-
-Three hash characters are intentionally used as the minimum practical suffix because the readable route and exact departure timestamp(s) already provide most of the uniqueness. The suffix is only a compact collision tie-breaker.
-
-`itinerary_key` identifies the flight combination. `dedupe_key` additionally identifies the passenger/cabin quote context so price observations for materially different searches do not overwrite each other.
-
-
+For one-way searches, all inbound (`I*`) fields remain blank.
 
 ## Tampermonkey safe-to-leave indicator
 
