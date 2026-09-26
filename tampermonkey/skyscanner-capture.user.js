@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.7
+// @version      1.6.8
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.7',
+    scriptVersion: '1.6.8',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -200,18 +200,39 @@
     const candidates = new Set();
 
     /*
-     * Capture every flight-result / connection card currently rendered
-     * by Skyscanner, not only the cheapest or first result. Skyscanner
-     * lazy-loads and may virtualize results, so cards that appear later
-     * while scrolling are picked up by MutationObserver and accumulated
-     * in state.discovered.
+     * Skyscanner localizes route URLs and accessibility text.
+     *
+     * Examples:
+     *   /transport/flights/...   (English)
+     *   /transport/fluge/...     (German)
+     *
+     * Any itinerary/config link is a strong signal that its containing
+     * element is a flight result card, independent of the localized route
+     * word used in the URL.
      */
+    document
+      .querySelectorAll('a[href*="/config/"]')
+      .forEach(element => {
+        candidates.add(findResultContainer(element));
+      });
 
-    document.querySelectorAll(
-      '[aria-label*="Flight option"],' +
-      '[aria-label*="Total cost"],' +
-      'a[href*="/transport/flights/"][href*="/config/"]'
-    ).forEach(element => candidates.add(findResultContainer(element)));
+    /*
+     * Sponsored/result cards do not always expose a config link, so also
+     * detect localized accessibility labels.
+     */
+    document.querySelectorAll('[aria-label]').forEach(element => {
+      const label = String(
+        element.getAttribute('aria-label') || ''
+      );
+
+      if (
+        /flight option|total cost|flugoption|gesamtpreis|gesamtkosten/i.test(
+          label
+        )
+      ) {
+        candidates.add(findResultContainer(element));
+      }
+    });
 
     document.querySelectorAll(
       '[data-testid*="itinerary"],' +
@@ -258,18 +279,23 @@
   function getResultText(element) {
     const accessibilityLabels = [];
 
+    const isRelevantAccessibilityLabel = label =>
+      /flight option|total cost|flugoption|gesamtpreis|gesamtkosten/i.test(
+        String(label || '')
+      );
+
     if (element.getAttribute) {
       const own = element.getAttribute('aria-label');
-      if (own) accessibilityLabels.push(own);
+
+      if (own && isRelevantAccessibilityLabel(own)) {
+        accessibilityLabels.push(own);
+      }
     }
 
     element.querySelectorAll?.('[aria-label]').forEach(node => {
       const label = node.getAttribute('aria-label');
 
-      if (
-        label &&
-        (/flight option/i.test(label) || /total cost/i.test(label))
-      ) {
+      if (label && isRelevantAccessibilityLabel(label)) {
         accessibilityLabels.push(label);
       }
     });
@@ -278,570 +304,9 @@
       return normalizeWhitespace(accessibilityLabels.join(' '));
     }
 
-    return normalizeWhitespace(element.innerText || element.textContent || '');
-  }
-
-  function normalizeCurrency(value) {
-    const token = String(value || '').trim().toUpperCase();
-
-    if (token === '€') return 'EUR';
-    if (token === '$') return 'USD';
-    if (token === '£') return 'GBP';
-    if (token === 'ZŁ') return 'PLN';
-
-    return token;
-  }
-
-  function parseLocalizedNumber(value) {
-    let text = String(value || '').replace(/\s/g, '');
-    const lastComma = text.lastIndexOf(',');
-    const lastDot = text.lastIndexOf('.');
-
-    if (lastComma >= 0 && lastDot >= 0) {
-      if (lastComma > lastDot) {
-        text = text.replace(/\./g, '').replace(',', '.');
-      } else {
-        text = text.replace(/,/g, '');
-      }
-    } else if (lastComma >= 0) {
-      const decimals = text.length - lastComma - 1;
-
-      if (decimals === 2) {
-        text = text.replace(',', '.');
-      } else {
-        text = text.replace(/,/g, '');
-      }
-    } else {
-      const pieces = text.split('.');
-
-      if (
-        pieces.length > 2 ||
-        (pieces.length === 2 && pieces[1].length === 3)
-      ) {
-        text = text.replace(/\./g, '');
-      }
-    }
-
-    const number = Number(text);
-    return Number.isFinite(number) ? number : '';
-  }
-
-  function extractPrice(text) {
-    const normalized = normalizeWhitespace(text);
-
-    const patterns = [
-      {
-        regex: /(?:Total cost|Price)[^\d€$£]*([€$£])\s*([\d.,\s]+)/i,
-        symbolFirst: true
-      },
-      {
-        regex: /([€$£])\s*([\d][\d.,\s]*)/,
-        symbolFirst: true
-      },
-      {
-        regex: /([\d][\d.,\s]*)\s*(EUR|USD|GBP|PLN|CHF|zł|€|\$|£)/i,
-        symbolFirst: false
-      },
-      {
-        regex: /(EUR|USD|GBP|PLN|CHF)\s*([\d][\d.,\s]*)/i,
-        symbolFirst: true
-      }
-    ];
-
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern.regex);
-      if (!match) continue;
-
-      const currencyToken = pattern.symbolFirst ? match[1] : match[2];
-      const numberToken = pattern.symbolFirst ? match[2] : match[1];
-
-      return {
-        price: parseLocalizedNumber(numberToken),
-        currency: normalizeCurrency(currencyToken),
-        price_text: normalizeWhitespace(match[0])
-      };
-    }
-
-    return {
-      price: '',
-      currency: '',
-      price_text: ''
-    };
-  }
-
-  function extractAirlines(text) {
-    const patterns = [
-      /Flug mit\s+(.+?)\s+Abflug ab/i,
-      /Flight with\s+(.+?)\s+Departing from/i,
-      /Operated by\s+(.+?)(?=[.,]|$)/i
-    ];
-
-    for (const regex of patterns) {
-      const match = text.match(regex);
-
-      if (match) {
-        return normalizeWhitespace(match[1]);
-      }
-    }
-
-    return '';
-  }
-
-  function extractTimes(text) {
-    const result = {
-      depart_time: '',
-      arrive_time: ''
-    };
-
-    const patterns = [
-      /Departing from .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?).*?arriving in .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?)/i,
-      /Abflug ab .*? um ([0-9]{1,2}:[0-9]{2}).*?Ankunft in .*? um ([0-9]{1,2}:[0-9]{2})/i
-    ];
-
-    for (const regex of patterns) {
-      const match = text.match(regex);
-
-      if (match) {
-        result.depart_time = normalizeWhitespace(match[1]);
-        result.arrive_time = normalizeWhitespace(match[2]);
-        return result;
-      }
-    }
-
-    const values = Array.from(
-      text.matchAll(/\b([0-2]?\d:[0-5]\d)\b/g)
-    ).map(matchItem => matchItem[1]);
-
-    if (values.length >= 1) result.depart_time = values[0];
-    if (values.length >= 2) result.arrive_time = values[1];
-
-    return result;
-  }
-
-  function extractDuration(text) {
-    let match = text.match(
-      /Flugzeit von\s+(\d+)\s*Stunden?(?:\s+(\d+)\s*Minuten?)?/i
+    return normalizeWhitespace(
+      element.innerText || element.textContent || ''
     );
-
-    if (match) {
-      return match[1] + 'h ' + (match[2] || '0') + 'm';
-    }
-
-    match = text.match(
-      /\b(\d{1,3})\s*(?:Std\.|St\.)\s*(?:(\d{1,2})\s*Min\.)?/i
-    );
-
-    if (match) {
-      return match[1] + 'h ' + (match[2] || '0') + 'm';
-    }
-
-    match = text.match(
-      /taking\s+(\d+)\s*hours?(?:\s+(\d+)\s*minutes?)?/i
-    );
-
-    if (match) {
-      return match[1] + 'h ' + (match[2] || '0') + 'm';
-    }
-
-    match = text.match(
-      /\b(\d{1,3})h\s*(?:(\d{1,2})m)?\b/i
-    );
-
-    if (match) {
-      return match[1] + 'h ' + (match[2] || '0') + 'm';
-    }
-
-    return '';
-  }
-
-  function extractStops(text) {
-    if (/\bDirektflug\b/i.test(text) || /\bDirekt\b/i.test(text)) {
-      return 0;
-    }
-
-    let match = text.match(
-      /Flug mit\s+(\d+)\s+Zwischenstopps?/i
-    );
-
-    if (match) {
-      return Number(match[1]);
-    }
-
-    if (/Flug mit einem Zwischenstopp/i.test(text)) {
-      return 1;
-    }
-
-    match = text.match(
-      /\b(\d+)\s+Zwischenstopps?\b/i
-    );
-
-    if (match) {
-      return Number(match[1]);
-    }
-
-    match = text.match(
-      /\b(\d+)\s+stops?\b/i
-    );
-
-    if (match) {
-      return Number(match[1]);
-    }
-
-    return '';
-  }
-
-  function extractStopAirports(text) {
-    if (!text || /\bDirektflug\b/i.test(text) || /\bDirekt\b/i.test(text)) {
-      return '';
-    }
-
-    /*
-     * Prefer the compact summary rendered by Skyscanner:
-     *   1 Zwischenstopp BCN
-     *   2 Zwischenstopps AMS , MAD
-     * and the equivalent English "stop(s)" form.
-     */
-    const patterns = [
-      /\b\d+\s+Zwischenstopps?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i,
-      /\b\d+\s+stops?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i
-    ];
-
-    for (const regex of patterns) {
-      const match = text.match(regex);
-
-      if (match) {
-        return match[1]
-          .split(',')
-          .map(code => code.trim().toUpperCase())
-          .filter(Boolean)
-          .join(',');
-      }
-    }
-
-    return '';
-  }
-
-  function extractSelfTransfer(text) {
-    return Boolean(
-      /self[- ]?transfer/i.test(text) ||
-      /change airports/i.test(text) ||
-      /Flug mit eigenem Transfer/i.test(text) ||
-      /eigenem Transfer/i.test(text) ||
-      /erneut einchecken/i.test(text)
-    );
-  }
-
-  function buildQueryKey(search) {
-    return [
-      search.origin,
-      search.destination,
-      search.outbound_date,
-      search.inbound_date,
-      search.adults,
-      search.children,
-      search.cabin
-    ]
-      .map(value => normalizeWhitespace(value).toLowerCase())
-      .join('|');
-  }
-
-  function extractAirportCodes(text, times, fallbackOrigin, fallbackDestination) {
-    let origin = fallbackOrigin || '';
-    let destination = fallbackDestination || '';
-
-    if (times.depart_time) {
-      const departRegex = new RegExp(
-        times.depart_time.replace(':', '\\:') + '\\s+([A-Z]{3})\\b'
-      );
-      const match = text.match(departRegex);
-      if (match) origin = match[1];
-    }
-
-    if (times.arrive_time) {
-      const arriveRegex = new RegExp(
-        times.arrive_time.replace(':', '\\:') +
-        '(?:\\s+\\+\\d+)?\\s+([A-Z]{3})\\b'
-      );
-      const matches = Array.from(text.matchAll(new RegExp(arriveRegex.source, 'g')));
-      if (matches.length) {
-        destination = matches[matches.length - 1][1];
-      }
-    }
-
-    return { origin, destination };
-  }
-
-
-  function extractTotalPrice(text) {
-    const match = text.match(
-      /Gesamtpreis\s+([\d.]+(?:,\d{1,2})?)\s*€/i
-    ) || text.match(
-      /Gesamt\s+([\d.]+(?:,\d{1,2})?)\s*€/i
-    );
-
-    if (!match) {
-      return '';
-    }
-
-    const normalized = match[1]
-      .replace(/\./g, '')
-      .replace(',', '.');
-
-    const value = Number(normalized);
-
-    return Number.isFinite(value)
-      ? value
-      : '';
-  }
-
-  function shortHash(value, length = 3) {
-    const base36 = parseInt(fnv1a(String(value || '')), 16)
-      .toString(36)
-      .toUpperCase()
-      .padStart(length, '0');
-
-    return base36.slice(-length);
-  }
-
-  function countChildren(value) {
-    const text = normalizeWhitespace(value);
-
-    if (!text) return 0;
-
-    if (/^\d+$/.test(text)) {
-      return Number(text);
-    }
-
-    return text
-      .split(/[|,;]+/)
-      .map(item => item.trim())
-      .filter(Boolean)
-      .length;
-  }
-
-  function cabinCode(value) {
-    const text = normalizeWhitespace(value).toLowerCase();
-
-    if (text === 'economy') return 'E';
-    if (text.includes('premium')) return 'P';
-    if (text === 'business') return 'B';
-    if (text === 'first') return 'F';
-
-    return text ? text.slice(0, 1).toUpperCase() : 'U';
-  }
-
-  function combineDateTime(date, time) {
-    if (!date || !time) return '';
-
-    return `${date} ${normalizeWhitespace(time)}`;
-  }
-
-  function addDaysIso(date, days) {
-    if (!date) return '';
-
-    const parsed = new Date(date + 'T00:00:00Z');
-
-    if (Number.isNaN(parsed.getTime())) {
-      return '';
-    }
-
-    parsed.setUTCDate(parsed.getUTCDate() + Number(days || 0));
-
-    return parsed.toISOString().slice(0, 10);
-  }
-
-  function extractArrivalDateForLeg(text, departureDate) {
-    if (!departureDate) return '';
-
-    let offset = 0;
-
-    const plusMatch = text.match(/\b\+([1-9]\d*)\s+[A-Z]{3}\b/);
-
-    if (plusMatch) {
-      offset = Number(plusMatch[1]) || 0;
-    } else if (/einen Tag später/i.test(text)) {
-      offset = 1;
-    } else if (/zwei Tage später/i.test(text)) {
-      offset = 2;
-    } else if (/one day later/i.test(text)) {
-      offset = 1;
-    } else if (/two days later/i.test(text)) {
-      offset = 2;
-    }
-
-    return addDaysIso(departureDate, offset);
-  }
-
-  function findLegBlocks(text) {
-    const markers = [];
-    const regex = /(?:Abflug ab|Departing from)/gi;
-    let match;
-
-    while ((match = regex.exec(text)) !== null) {
-      markers.push(match.index);
-    }
-
-    if (!markers.length) {
-      return [text];
-    }
-
-    return markers.map((marker, index) => {
-      const previousGerman = text.lastIndexOf('Flug mit ', marker);
-      const previousEnglish = text.lastIndexOf('Flight with ', marker);
-
-      let start = Math.max(previousGerman, previousEnglish);
-
-      if (start < 0) {
-        start = Math.max(0, marker - 160);
-      }
-
-      const nextMarker = markers[index + 1];
-
-      let end = nextMarker === undefined
-        ? text.length
-        : nextMarker;
-
-      if (nextMarker !== undefined) {
-        const nextGerman = text.lastIndexOf('Flug mit ', nextMarker);
-        const nextEnglish = text.lastIndexOf('Flight with ', nextMarker);
-        const nextStart = Math.max(nextGerman, nextEnglish);
-
-        if (nextStart > marker) {
-          end = nextStart;
-        }
-      }
-
-      return normalizeWhitespace(text.slice(start, end));
-    });
-  }
-
-  function extractLeg(block, departureDate, fallbackOrigin, fallbackDestination) {
-    if (!block || !departureDate) {
-      return {
-        origin: '',
-        destination: '',
-        departure_dt: '',
-        arrival_dt: '',
-        duration: '',
-        stops: '',
-        stop_airports: '',
-        airlines: '',
-        self_transfer: ''
-      };
-    }
-
-    const times = extractTimes(block);
-    const airports = extractAirportCodes(
-      block,
-      times,
-      fallbackOrigin,
-      fallbackDestination
-    );
-
-    const arrivalDate = extractArrivalDateForLeg(
-      block,
-      departureDate
-    );
-
-    return {
-      origin: airports.origin,
-      destination: airports.destination,
-      departure_dt: combineDateTime(
-        departureDate,
-        times.depart_time
-      ),
-      arrival_dt: combineDateTime(
-        arrivalDate || departureDate,
-        times.arrive_time
-      ),
-      duration: extractDuration(block),
-      stops: extractStops(block),
-      stop_airports: extractStopAirports(block),
-      airlines: extractAirlines(block),
-      self_transfer: extractSelfTransfer(block)
-    };
-  }
-
-  function compactDateTime(value) {
-    const match = String(value || '').match(
-      /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/
-    );
-
-    if (!match) return '';
-
-    return (
-      match[1].slice(2) +
-      match[2] +
-      match[3] +
-      match[4] +
-      match[5]
-    );
-  }
-
-  function buildFriendlyKeys(search, outLeg, inLeg, rawItineraryKey) {
-    const origin = outLeg.origin || search.origin || 'ORG';
-    const destination =
-      outLeg.destination || search.destination || 'DST';
-
-    const outStamp =
-      compactDateTime(outLeg.departure_dt) ||
-      String(search.outbound_date || '').replace(/-/g, '').slice(2);
-
-    const inStamp =
-      compactDateTime(inLeg.departure_dt) ||
-      (search.inbound_date
-        ? String(search.inbound_date).replace(/-/g, '').slice(2)
-        : '');
-
-    const stableSignature = [
-      rawItineraryKey,
-      origin,
-      destination,
-      outLeg.departure_dt,
-      outLeg.arrival_dt,
-      outLeg.duration,
-      outLeg.stops,
-      outLeg.stop_airports,
-      outLeg.airlines,
-      inLeg.departure_dt,
-      inLeg.arrival_dt,
-      inLeg.duration,
-      inLeg.stops,
-      inLeg.stop_airports,
-      inLeg.airlines
-    ].join('|');
-
-    /*
-     * Three base-36 characters are used only as a tie-breaker.
-     * The human-readable route and exact departure timestamps already
-     * carry most of the uniqueness, so a longer opaque hash adds little.
-     */
-    const suffix = shortHash(
-      rawItineraryKey || stableSignature,
-      3
-    );
-
-    const readable = [
-      `${origin}-${destination}`,
-      outStamp,
-      inStamp
-    ]
-      .filter(Boolean)
-      .join('_');
-
-    const itineraryKey = `${readable}_${suffix}`;
-
-    const adults = Number(search.adults || 0) || 0;
-    const children = countChildren(search.children);
-
-    const dedupeKey =
-      itineraryKey +
-      `_A${adults}C${children}${cabinCode(search.cabin)}`;
-
-    return {
-      itinerary_key: itineraryKey,
-      dedupe_key: dedupeKey
-    };
   }
 
   function extractResult(element) {
@@ -1232,7 +697,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.7',
+        version: '1.6.8',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
