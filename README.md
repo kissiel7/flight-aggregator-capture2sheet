@@ -533,3 +533,18 @@ If those conditions are true, the panel becomes **Complete — safe to leave pag
 
 The panel also shows the active Tampermonkey script version. This makes it immediately visible when an already-open browser tab is still running an older userscript revision.
 
+
+
+### Local Tampermonkey configuration placement
+
+From Tampermonkey 1.6.5, the local credential/configuration block is placed as close as practical to the end of the userscript, immediately before `init()`:
+
+```javascript
+const WEB_APP_URL = 'PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE';
+const API_KEY = 'PASTE_YOUR_API_KEY_HERE';
+
+init();
+```
+
+This keeps the two machine-local values easy to preserve when replacing the script from GitHub. The constants do not need to be declared near the top; they only need to be initialized before `init()` starts code that reads them.
+
