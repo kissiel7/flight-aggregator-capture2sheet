@@ -363,3 +363,92 @@ Tampermonkey 1.4.0 makes the rendered Skyscanner card authoritative for actual c
 
 For a one-way search (`rtn=0`), `inbound_date` still has a useful value because it means arrival date, not return-search date.
 
+
+
+## Current compact result schema
+
+The live `Skyscanner Results` tab uses compact display-oriented headers:
+
+```text
+Org
+Dst
+Out_DayTimeD
+Out_DayTimeL
+Out_Dur
+Out_Stop
+Out_Airlines
+Out_Self_T
+In_DayTimeD
+In_DayTimeL
+In_Dur
+In_Stop
+In_Airlines
+In_Self_T
+Price_PP
+Price_Total
+Curr
+AD
+CH
+cabin
+Search_URL
+source
+first_seen
+last_seen
+seen_count
+captured_at_client
+price_text
+dedupe_key
+itinerary_key
+config_url
+raw_text
+```
+
+Datetime fields use ISO ordering in one cell:
+
+```text
+YYYY-MM-DD HH:mm
+```
+
+Examples:
+
+```text
+Out_DayTimeD = 2026-10-18 20:50
+Out_DayTimeL = 2026-10-19 01:10
+In_DayTimeD  = 2026-10-30 16:40
+In_DayTimeL  = 2026-10-30 22:35
+```
+
+For one-way results, all `In_*` fields remain blank.
+
+The spreadsheet contains a `Skyscanner Examples` tab with one-way and round-trip examples using the same schema.
+
+### Compact human-friendly keys
+
+Opaque Skyscanner config identifiers are retained in `config_url`, but the working keys are human-readable.
+
+One-way example:
+
+```text
+itinerary_key = BER-TFS_2610182050_LAE
+dedupe_key    = BER-TFS_2610182050_LAE_A3C0E
+```
+
+Round-trip example:
+
+```text
+itinerary_key = BER-TFS_2610182050_2610301640_K7M
+dedupe_key    = BER-TFS_2610182050_2610301640_K7M_A3C0E
+```
+
+Meaning:
+
+- `BER-TFS` = actual outbound airport pair
+- `2610182050` = outbound departure in `YYMMDDHHmm`
+- the optional second timestamp = inbound departure in `YYMMDDHHmm`
+- the final three alphanumeric characters are a base-36 tie-breaker derived from the stable Skyscanner itinerary/config identity
+- `A3C0E` = 3 adults, 0 children, economy
+
+Three hash characters are intentionally used as the minimum practical suffix because the readable route and exact departure timestamp(s) already provide most of the uniqueness. The suffix is only a compact collision tie-breaker.
+
+`itinerary_key` identifies the flight combination. `dedupe_key` additionally identifies the passenger/cabin quote context so price observations for materially different searches do not overwrite each other.
+
