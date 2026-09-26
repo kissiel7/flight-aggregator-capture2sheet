@@ -136,6 +136,7 @@ arrive_time
 duration
 stops
 price
+total_price
 currency
 airlines
 self_transfer
@@ -348,4 +349,17 @@ The fixes are now in GitHub:
 - Fallback itinerary deduplication now uses normalized flight characteristics instead of the entire rendered card text, reducing duplicates caused by provider advertising text or changing “Flight option N” labels.
 
 Existing test rows that were already converted to the wrong underlying value type cannot always be repaired by formatting alone. For test data, the safest recovery is to clear the affected data rows (keep the header), deploy the fixed backend/userscript, and recapture the search results.
+
+
+
+## 2026-09-26 route/price extraction refinement
+
+Tampermonkey 1.4.0 makes the rendered Skyscanner card authoritative for actual connection details:
+
+- `origin` and `destination` are extracted from the visible itinerary codes (for example `BER`, `TFS`, `TFN`) rather than relying only on Skyscanner's search-area URL codes such as `TENE`.
+- `inbound_date` is currently defined as the **arrival date of the displayed connection**, paired with `arrive_time`. A `+1` or German `einen Tag später` advances the date accordingly.
+- `duration`, `stops`, `airlines`, and `self_transfer` support the German result-card wording observed on skyscanner.de.
+- `total_price` stores the visible total price for all travelers, while `price` remains the visible per-person price.
+
+For a one-way search (`rtn=0`), `inbound_date` still has a useful value because it means arrival date, not return-search date.
 
