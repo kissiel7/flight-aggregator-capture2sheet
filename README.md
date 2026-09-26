@@ -514,3 +514,22 @@ seen_count
 
 The spreadsheet formatting no longer applies a blanket text format to the entire data area. Numeric columns receive numeric formats directly, while text formatting is restricted to text columns. This keeps prices and counts usable for native Google Sheets sorting, filtering, formulas, comparisons, and charts.
 
+
+
+### Deterministic readiness state (Tampermonkey 1.6.4)
+
+The collector readiness indicator no longer depends on a particular ordering of DOM scans, send callbacks, and timer callbacks.
+
+The green state is now derived from these conditions:
+
+```text
+backend send succeeded
+AND no unsent extracted results remain
+AND at least one result has been discovered
+AND the extracted result set has been stable for the configured settle window
+```
+
+If those conditions are true, the panel becomes **Complete — safe to leave page** regardless of whether an extra periodic scan happened first.
+
+The panel also shows the active Tampermonkey script version. This makes it immediately visible when an already-open browser tab is still running an older userscript revision.
+
