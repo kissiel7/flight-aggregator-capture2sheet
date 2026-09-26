@@ -331,3 +331,21 @@ redeploy existing Apps Script deployment
 ```
 
 Until then, use the manual workflow above.
+
+
+## 2026-09-26 column-migration / German Skyscanner parsing fix
+
+A test deployment exposed two issues in the first column-reorder migration:
+
+1. Reordered values inherited number formats from the old physical columns. This could display times as dates (for example `1899-12-30 10:05:00`) and counters such as `seen_count` as times.
+2. Search metadata parsing depended on the literal URL segment `/flights/`. German Skyscanner uses a localized route such as `/transport/fluge/...`, so `origin`, `destination`, and dates could be empty.
+
+The fixes are now in GitHub:
+
+- Apps Script explicitly resets data-column number formats after schema migration and then reapplies the intended formats by field name.
+- Tampermonkey 1.3.0 parses the route structurally after `/transport/<localized route word>/` instead of requiring `/flights/`.
+- German result text is supported for airline, departure/arrival time, duration, stops, and self-transfer extraction.
+- Fallback itinerary deduplication now uses normalized flight characteristics instead of the entire rendered card text, reducing duplicates caused by provider advertising text or changing “Flight option N” labels.
+
+Existing test rows that were already converted to the wrong underlying value type cannot always be repaired by formatting alone. For test data, the safest recovery is to clear the affected data rows (keep the header), deploy the fixed backend/userscript, and recapture the search results.
+
