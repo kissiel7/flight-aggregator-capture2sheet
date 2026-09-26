@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.4.0
+// @version      1.4.1
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -534,32 +534,6 @@
     return { origin, destination };
   }
 
-  function extractArrivalDate(text, outboundDate) {
-    if (!outboundDate) return '';
-
-    let dayOffset = 0;
-
-    const plusMatch = text.match(
-      /\b\+([1-9]\d*)\s+[A-Z]{3}\b/
-    );
-
-    if (plusMatch) {
-      dayOffset = Number(plusMatch[1]) || 0;
-    } else if (/einen Tag später/i.test(text)) {
-      dayOffset = 1;
-    } else if (/zwei Tage später/i.test(text)) {
-      dayOffset = 2;
-    }
-
-    const date = new Date(outboundDate + 'T00:00:00Z');
-
-    if (Number.isNaN(date.getTime())) {
-      return '';
-    }
-
-    date.setUTCDate(date.getUTCDate() + dayOffset);
-    return date.toISOString().slice(0, 10);
-  }
 
   function extractTotalPrice(text) {
     const match = text.match(
@@ -604,10 +578,6 @@
       search.origin,
       search.destination
     );
-    const arrivalDate = extractArrivalDate(
-      rawText,
-      search.outbound_date
-    );
 
     let itineraryKey = extractItineraryKey(configUrl);
 
@@ -644,7 +614,7 @@
       origin: airports.origin,
       destination: airports.destination,
       outbound_date: search.outbound_date,
-      inbound_date: arrivalDate,
+      inbound_date: search.inbound_date,
       adults: search.adults,
       children: search.children,
       cabin: search.cabin,
@@ -790,7 +760,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.4.0',
+        version: '1.4.1',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
