@@ -453,3 +453,14 @@ Version 1.6.1 changes the logic so that:
 - only an actual new or changed extracted flight result resets the stabilization period;
 - after a successful send and a stable result set, the indicator can reach green even while Skyscanner continues updating unrelated page elements.
 
+
+
+### Sticky completed-page state (Tampermonkey 1.6.2)
+
+Once the current Skyscanner URL has reached the green **Complete — safe to leave page** state, that completed state is sticky for that URL.
+
+- ordinary DOM churn and unchanged rescans no longer make the panel fall back to generic **Loading / collecting**;
+- if genuinely new/changed extracted results appear and are unsent, the panel shows **New results detected — keep page open**, then **Sending**, and returns to green after completion;
+- if a later scan finds nothing pending, the panel remains green;
+- navigating to a new Skyscanner search URL resets the readiness state and starts the initial loading/collecting cycle again.
+
