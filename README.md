@@ -203,3 +203,26 @@ Controls:
 - **Pending > 0, HTTP blank**: results exist but no POST completed yet.
 - **HTTP 200 + Saved**: Apps Script accepted the batch; inspect `Skyscanner Results`.
 - **Backend error / Network error / Timeout**: troubleshoot deployment URL, Web App permissions, Tampermonkey `@connect`, or Apps Script deployment.
+
+
+## Capture scope and seen_count
+
+### Capture scope
+
+The Tampermonkey collector scans **all Skyscanner connection/result cards that are currently rendered in the page DOM**. It is not limited to the cheapest or first result.
+
+Skyscanner may lazy-load or virtualize results. As the user scrolls and additional result cards are rendered, the MutationObserver detects them and the collector accumulates those itineraries during the current search session.
+
+This means:
+
+- all currently rendered result cards are captured;
+- additional cards loaded while scrolling are also captured;
+- the script does not currently auto-scroll the entire result list by itself.
+
+### seen_count
+
+`seen_count` is the number of times the backend has accepted a new observation of the same deduplicated itinerary.
+
+Version 1.2.0 fixes an earlier issue where `captured_at_client` changed on every periodic scan and could therefore cause unchanged results to be re-sent. The timestamp is now excluded from change detection.
+
+After this fix, `seen_count` increases only when that itinerary is sent again because its captured content changed, for example when the price or another extracted field changes.
