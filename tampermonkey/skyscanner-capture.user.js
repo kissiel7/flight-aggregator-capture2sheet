@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.9
+// @version      1.6.10
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.9',
+    scriptVersion: '1.6.10',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -440,7 +440,7 @@
     if (canBeReadyNow()) {
       state.ready = true;
       state.pageCompleted = true;
-      state.lastStatus = 'Complete — safe to leave page';
+      state.lastStatus = 'All results uploaded';
 
       if (state.readyTimer) {
         clearTimeout(state.readyTimer);
@@ -503,7 +503,7 @@
       return {
         color: '#d93025',
         symbol: '●',
-        label: 'Error — keep page open'
+        label: 'Error'
       };
     }
 
@@ -511,7 +511,7 @@
       return {
         color: '#188038',
         symbol: '●',
-        label: 'Complete — safe to leave page'
+        label: 'Complete'
       };
     }
 
@@ -519,7 +519,7 @@
       return {
         color: '#1a73e8',
         symbol: '●',
-        label: 'UI override active — collection continues'
+        label: 'Override'
       };
     }
 
@@ -527,7 +527,7 @@
       return {
         color: '#1a73e8',
         symbol: '●',
-        label: 'Sending — keep page open'
+        label: 'Sending'
       };
     }
 
@@ -537,7 +537,7 @@
       return {
         color: '#f9ab00',
         symbol: '●',
-        label: 'Collecting results — keep page open'
+        label: 'Collecting'
       };
     }
 
@@ -545,14 +545,14 @@
       return {
         color: '#188038',
         symbol: '●',
-        label: 'Complete — safe to leave page'
+        label: 'Complete'
       };
     }
 
     return {
       color: '#f9ab00',
       symbol: '●',
-      label: 'Loading / collecting — keep page open'
+      label: 'Loading'
     };
   }
 
@@ -697,7 +697,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.9',
+        version: '1.6.10',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -879,8 +879,10 @@
       right: '14px',
       bottom: '14px',
       zIndex: '2147483647',
-      width: '300px',
-      padding: '12px',
+      width: 'fit-content',
+      minWidth: '220px',
+      maxWidth: 'calc(100vw - 28px)',
+      padding: '10px 11px',
       background: 'rgba(20, 24, 31, 0.95)',
       color: '#fff',
       border: '1px solid rgba(255,255,255,.25)',
@@ -924,11 +926,11 @@
         <span>${escapeHtml(visual.label)}</span>
       </div>
 
-      <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
+      <div style="white-space:nowrap"><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
       <div><b>Version:</b> ${escapeHtml(CONFIG.scriptVersion)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
       <div><b>INS / UPD / REJ:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
-      <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
+      <div style="white-space:nowrap"><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
       ${errorLine}
       ${overrideButton}
     `;
