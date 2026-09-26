@@ -415,3 +415,29 @@ Three hash characters are intentionally used as the minimum practical suffix bec
 
 `itinerary_key` identifies the flight combination. `dedupe_key` additionally identifies the passenger/cabin quote context so price observations for materially different searches do not overwrite each other.
 
+
+
+## Tampermonkey safe-to-leave indicator
+
+Tampermonkey 1.6.0 simplifies the diagnostic panel and makes its primary purpose explicit: show whether it is safe to leave the current Skyscanner result page.
+
+Indicator states:
+
+- **Yellow** — results are still loading/being collected; keep the page open.
+- **Blue** — results are currently being sent to Apps Script; keep the page open.
+- **Green** — all currently discovered results have been sent and no new/changed results appeared during the stabilization window; it is safe to leave/change the page.
+- **Red** — collector/backend error; keep the page open and inspect the displayed error.
+
+The green state is deliberately delayed. After a successful send, the collector waits approximately 3.5 seconds for additional Skyscanner results to appear. If new results are detected, the green state is cancelled, the new results are sent, and the stabilization check starts again.
+
+The compact panel now shows only:
+
+- status
+- result cards detected
+- cumulative inserted / updated counts
+- backend health
+- error text when applicable
+- manual **Scan now**, **Send now**, and **Test backend** buttons
+
+Low-value telemetry such as `Results extracted`, `Pending`, HTTP status, last scan time, and last send time is intentionally hidden from the panel.
+
