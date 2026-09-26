@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.4.1
+// @version      1.5.0
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -557,6 +557,252 @@
       : '';
   }
 
+  function shortHash(value, length = 3) {
+    const base36 = parseInt(fnv1a(String(value || '')), 16)
+      .toString(36)
+      .toUpperCase()
+      .padStart(length, '0');
+
+    return base36.slice(-length);
+  }
+
+  function countChildren(value) {
+    const text = normalizeWhitespace(value);
+
+    if (!text) return 0;
+
+    if (/^\d+$/.test(text)) {
+      return Number(text);
+    }
+
+    return text
+      .split(/[|,;]+/)
+      .map(item => item.trim())
+      .filter(Boolean)
+      .length;
+  }
+
+  function cabinCode(value) {
+    const text = normalizeWhitespace(value).toLowerCase();
+
+    if (text === 'economy') return 'E';
+    if (text.includes('premium')) return 'P';
+    if (text === 'business') return 'B';
+    if (text === 'first') return 'F';
+
+    return text ? text.slice(0, 1).toUpperCase() : 'U';
+  }
+
+  function combineDateTime(date, time) {
+    if (!date || !time) return '';
+
+    return `${date} ${normalizeWhitespace(time)}`;
+  }
+
+  function addDaysIso(date, days) {
+    if (!date) return '';
+
+    const parsed = new Date(date + 'T00:00:00Z');
+
+    if (Number.isNaN(parsed.getTime())) {
+      return '';
+    }
+
+    parsed.setUTCDate(parsed.getUTCDate() + Number(days || 0));
+
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  function extractArrivalDateForLeg(text, departureDate) {
+    if (!departureDate) return '';
+
+    let offset = 0;
+
+    const plusMatch = text.match(/\b\+([1-9]\d*)\s+[A-Z]{3}\b/);
+
+    if (plusMatch) {
+      offset = Number(plusMatch[1]) || 0;
+    } else if (/einen Tag später/i.test(text)) {
+      offset = 1;
+    } else if (/zwei Tage später/i.test(text)) {
+      offset = 2;
+    } else if (/one day later/i.test(text)) {
+      offset = 1;
+    } else if (/two days later/i.test(text)) {
+      offset = 2;
+    }
+
+    return addDaysIso(departureDate, offset);
+  }
+
+  function findLegBlocks(text) {
+    const markers = [];
+    const regex = /(?:Abflug ab|Departing from)/gi;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      markers.push(match.index);
+    }
+
+    if (!markers.length) {
+      return [text];
+    }
+
+    return markers.map((marker, index) => {
+      const previousGerman = text.lastIndexOf('Flug mit ', marker);
+      const previousEnglish = text.lastIndexOf('Flight with ', marker);
+
+      let start = Math.max(previousGerman, previousEnglish);
+
+      if (start < 0) {
+        start = Math.max(0, marker - 160);
+      }
+
+      const nextMarker = markers[index + 1];
+
+      let end = nextMarker === undefined
+        ? text.length
+        : nextMarker;
+
+      if (nextMarker !== undefined) {
+        const nextGerman = text.lastIndexOf('Flug mit ', nextMarker);
+        const nextEnglish = text.lastIndexOf('Flight with ', nextMarker);
+        const nextStart = Math.max(nextGerman, nextEnglish);
+
+        if (nextStart > marker) {
+          end = nextStart;
+        }
+      }
+
+      return normalizeWhitespace(text.slice(start, end));
+    });
+  }
+
+  function extractLeg(block, departureDate, fallbackOrigin, fallbackDestination) {
+    if (!block || !departureDate) {
+      return {
+        origin: '',
+        destination: '',
+        departure_dt: '',
+        arrival_dt: '',
+        duration: '',
+        stops: '',
+        airlines: '',
+        self_transfer: ''
+      };
+    }
+
+    const times = extractTimes(block);
+    const airports = extractAirportCodes(
+      block,
+      times,
+      fallbackOrigin,
+      fallbackDestination
+    );
+
+    const arrivalDate = extractArrivalDateForLeg(
+      block,
+      departureDate
+    );
+
+    return {
+      origin: airports.origin,
+      destination: airports.destination,
+      departure_dt: combineDateTime(
+        departureDate,
+        times.depart_time
+      ),
+      arrival_dt: combineDateTime(
+        arrivalDate || departureDate,
+        times.arrive_time
+      ),
+      duration: extractDuration(block),
+      stops: extractStops(block),
+      airlines: extractAirlines(block),
+      self_transfer: extractSelfTransfer(block)
+    };
+  }
+
+  function compactDateTime(value) {
+    const match = String(value || '').match(
+      /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/
+    );
+
+    if (!match) return '';
+
+    return (
+      match[1].slice(2) +
+      match[2] +
+      match[3] +
+      match[4] +
+      match[5]
+    );
+  }
+
+  function buildFriendlyKeys(search, outLeg, inLeg, rawItineraryKey) {
+    const origin = outLeg.origin || search.origin || 'ORG';
+    const destination =
+      outLeg.destination || search.destination || 'DST';
+
+    const outStamp =
+      compactDateTime(outLeg.departure_dt) ||
+      String(search.outbound_date || '').replace(/-/g, '').slice(2);
+
+    const inStamp =
+      compactDateTime(inLeg.departure_dt) ||
+      (search.inbound_date
+        ? String(search.inbound_date).replace(/-/g, '').slice(2)
+        : '');
+
+    const stableSignature = [
+      rawItineraryKey,
+      origin,
+      destination,
+      outLeg.departure_dt,
+      outLeg.arrival_dt,
+      outLeg.duration,
+      outLeg.stops,
+      outLeg.airlines,
+      inLeg.departure_dt,
+      inLeg.arrival_dt,
+      inLeg.duration,
+      inLeg.stops,
+      inLeg.airlines
+    ].join('|');
+
+    /*
+     * Three base-36 characters are used only as a tie-breaker.
+     * The human-readable route and exact departure timestamps already
+     * carry most of the uniqueness, so a longer opaque hash adds little.
+     */
+    const suffix = shortHash(
+      rawItineraryKey || stableSignature,
+      3
+    );
+
+    const readable = [
+      `${origin}-${destination}`,
+      outStamp,
+      inStamp
+    ]
+      .filter(Boolean)
+      .join('_');
+
+    const itineraryKey = `${readable}_${suffix}`;
+
+    const adults = Number(search.adults || 0) || 0;
+    const children = countChildren(search.children);
+
+    const dedupeKey =
+      itineraryKey +
+      `_A${adults}C${children}${cabinCode(search.cabin)}`;
+
+    return {
+      itinerary_key: itineraryKey,
+      dedupe_key: dedupeKey
+    };
+  }
+
   function extractResult(element) {
     const rawText = getResultText(element);
 
@@ -564,70 +810,82 @@
 
     const search = getSearchMetadata();
     const configUrl = extractConfigUrl(element);
+    const rawItineraryKey = extractItineraryKey(configUrl);
 
     const price = extractPrice(rawText);
     const totalPrice = extractTotalPrice(rawText);
-    const times = extractTimes(rawText);
-    const airlines = extractAirlines(rawText);
-    const duration = extractDuration(rawText);
-    const stops = extractStops(rawText);
-    const selfTransfer = extractSelfTransfer(rawText);
-    const airports = extractAirportCodes(
-      rawText,
-      times,
+
+    const legBlocks = findLegBlocks(rawText);
+
+    const outLeg = extractLeg(
+      legBlocks[0] || rawText,
+      search.outbound_date,
       search.origin,
       search.destination
     );
 
-    let itineraryKey = extractItineraryKey(configUrl);
+    const hasInbound =
+      Boolean(search.inbound_date) &&
+      legBlocks.length >= 2;
 
-    if (!itineraryKey) {
-      /*
-       * Build the fallback from flight characteristics instead of the full
-       * result-card text. This prevents the same connection from becoming
-       * a new itinerary merely because Skyscanner changes provider/ad text
-       * or the visible "Flight option N" number.
-       */
-      const signature = [
-        airlines,
-        times.depart_time,
-        times.arrive_time,
-        duration,
-        stops,
-        selfTransfer
-      ]
-        .map(value => normalizeWhitespace(value).toLowerCase())
-        .join('|');
+    const inLeg = hasInbound
+      ? extractLeg(
+          legBlocks[1],
+          search.inbound_date,
+          outLeg.destination || search.destination,
+          outLeg.origin || search.origin
+        )
+      : {
+          origin: '',
+          destination: '',
+          departure_dt: '',
+          arrival_dt: '',
+          duration: '',
+          stops: '',
+          airlines: '',
+          self_transfer: ''
+        };
 
-      itineraryKey = 'fallback-' + fnv1a(signature);
-    }
-
-    const dedupeKey =
-      buildQueryKey(search) + '|' + itineraryKey;
+    const keys = buildFriendlyKeys(
+      search,
+      outLeg,
+      inLeg,
+      rawItineraryKey
+    );
 
     return {
-      dedupe_key: dedupeKey,
-      itinerary_key: itineraryKey,
+      dedupe_key: keys.dedupe_key,
+      itinerary_key: keys.itinerary_key,
       captured_at_client: new Date().toISOString(),
       source: 'skyscanner',
       search_url: search.search_url,
-      origin: airports.origin,
-      destination: airports.destination,
-      outbound_date: search.outbound_date,
-      inbound_date: search.inbound_date,
-      adults: search.adults,
-      children: search.children,
+
+      origin: outLeg.origin || search.origin,
+      destination: outLeg.destination || search.destination,
+
+      out_departure_dt: outLeg.departure_dt,
+      out_arrival_dt: outLeg.arrival_dt,
+      out_duration: outLeg.duration,
+      out_stops: outLeg.stops,
+      out_airlines: outLeg.airlines,
+      out_self_transfer: outLeg.self_transfer,
+
+      in_departure_dt: inLeg.departure_dt,
+      in_arrival_dt: inLeg.arrival_dt,
+      in_duration: inLeg.duration,
+      in_stops: inLeg.stops,
+      in_airlines: inLeg.airlines,
+      in_self_transfer: inLeg.self_transfer,
+
+      adults: Number(search.adults || 0) || '',
+      children: countChildren(search.children),
       cabin: search.cabin,
+
       price: price.price,
       total_price: totalPrice,
       currency: price.currency,
       price_text: price.price_text,
-      airlines: airlines,
-      depart_time: times.depart_time,
-      arrive_time: times.arrive_time,
-      duration: duration,
-      stops: stops,
-      self_transfer: selfTransfer,
+
       config_url: configUrl,
       raw_text: rawText
     };
@@ -760,7 +1018,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.4.1',
+        version: '1.5.0',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
