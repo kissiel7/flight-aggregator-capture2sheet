@@ -21,6 +21,7 @@ const HEADERS = [
   'duration',
   'stops',
   'price',
+  'total_price',
   'currency',
   'airlines',
   'self_transfer',
@@ -466,6 +467,10 @@ function formatSheet_(sheet) {
     .getRange(2, column('price'), dataRowCount, 1)
     .setNumberFormat('#,##0.00');
 
+  sheet
+    .getRange(2, column('total_price'), dataRowCount, 1)
+    .setNumberFormat('#,##0.00');
+
   for (const name of ['stops', 'adults', 'children', 'seen_count']) {
     sheet
       .getRange(2, column(name), dataRowCount, 1)
@@ -494,6 +499,7 @@ function formatSheet_(sheet) {
   sheet.setColumnWidth(column('origin'), 80);
   sheet.setColumnWidth(column('destination'), 100);
   sheet.setColumnWidth(column('price'), 90);
+  sheet.setColumnWidth(column('total_price'), 100);
   sheet.setColumnWidth(column('currency'), 70);
   sheet.setColumnWidth(column('airlines'), 180);
   sheet.setColumnWidth(column('search_url'), 250);
