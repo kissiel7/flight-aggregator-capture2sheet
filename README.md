@@ -227,125 +227,107 @@ Version 1.2.0 fixes an earlier issue where `captured_at_client` changed on every
 
 After this fix, `seen_count` increases only when that itinerary is sent again because its captured content changed, for example when the price or another extracted field changes.
 
+## Deployment workflow
 
-## Automatic Apps Script deployment with GitHub Actions
+GitHub `main` remains the **source of truth** for the project.
 
-GitHub `main` is the source of truth for the Apps Script backend.
+For now, Apps Script deployment is intentionally **manual**.
 
-The workflow is:
+Current workflow:
 
 ```text
-commit to main changing apps-script/**
-        |
-        v
+change required
+      |
+      v
+update GitHub first
+      |
+      v
+copy apps-script/Code.gs into Google Apps Script
+      |
+      v
+save in Apps Script
+      |
+      v
+Deploy -> Manage deployments -> Edit
+      |
+      v
+create/select new version and deploy
+      |
+      v
+existing /exec Web App URL remains in use
+```
+
+### Source-of-truth rule
+
+All backend changes should be made in GitHub first:
+
+```text
+apps-script/Code.gs
+```
+
+The Apps Script editor on Google is treated as a deployed copy, not as the master source.
+
+This avoids the GitHub and Google versions drifting apart.
+
+### Tampermonkey updates
+
+Tampermonkey source is maintained in:
+
+```text
+tampermonkey/skyscanner-capture.user.js
+```
+
+When this file changes, copy the latest version into Tampermonkey.
+
+Tampermonkey-only changes do **not** require Apps Script redeployment.
+
+### When Apps Script redeployment is required
+
+Redeploy when files under:
+
+```text
+apps-script/**
+```
+
+change in a way that affects the Web App backend.
+
+Typical examples:
+
+- request handling changes
+- spreadsheet schema changes
+- deduplication logic changes
+- authentication changes
+- new backend fields or processing
+- manifest changes that affect runtime behavior
+
+### When redeployment is not required
+
+No Apps Script redeployment is needed for:
+
+- README/documentation changes
+- Tampermonkey-only changes
+- notes or planning files
+
+### GitHub Actions status
+
+A GitHub Actions / `clasp` deployment workflow was explored and the repository may still contain related files, but **automatic deployment is not currently part of the active operating procedure**.
+
+Do not rely on GitHub Actions to update the Google Apps Script project.
+
+The current decision is to keep manual deployment until automation is intentionally re-enabled and tested.
+
+### Future option
+
+If deployment automation is revisited later, the preferred architecture remains:
+
+```text
+GitHub main
+   ->
 GitHub Actions
-        |
-        v
-clasp push --force
-        |
-        v
-Apps Script project source updated
-        |
-        v
-existing Web App deployment redeployed
-        |
-        v
-same /exec URL remains in use
+   ->
+clasp push
+   ->
+redeploy existing Apps Script deployment
 ```
 
-Workflow file:
-
-```text
-.github/workflows/deploy-apps-script.yml
-```
-
-The workflow also supports manual execution through **Actions -> Deploy Apps Script -> Run workflow**.
-
-### One-time Google setup
-
-1. Enable the **Google Apps Script API** for the Google account that owns the Apps Script project:
-   `https://script.google.com/home/usersettings`
-2. On a trusted local machine, install clasp:
-   ```bash
-   npm install --global @google/clasp@3
-   ```
-3. Authenticate:
-   ```bash
-   clasp login
-   ```
-4. Get the Apps Script **Script ID** from:
-   **Apps Script -> Project Settings -> Script ID**
-5. Get the existing Web App **Deployment ID** from:
-   **Apps Script -> Deploy -> Manage deployments**
-6. The existing deployment should remain the production Web App deployment. The workflow updates this deployment rather than creating a new URL.
-
-### Required GitHub Actions secrets
-
-In GitHub:
-
-**Repository -> Settings -> Secrets and variables -> Actions -> New repository secret**
-
-Create these three secrets.
-
-#### `CLASP_JSON`
-
-Use:
-
-```json
-{
-  "scriptId": "YOUR_APPS_SCRIPT_SCRIPT_ID",
-  "rootDir": "apps-script"
-}
-```
-
-#### `CLASPRC_JSON`
-
-Use the complete contents of the local clasp authentication file created by `clasp login`.
-
-Windows default location:
-
-```text
-%USERPROFILE%\.clasprc.json
-```
-
-Linux/macOS default location:
-
-```text
-~/.clasprc.json
-```
-
-This contains an OAuth refresh token and **must never be committed to GitHub or pasted into documentation**.
-
-#### `APPS_SCRIPT_DEPLOYMENT_ID`
-
-Use the Deployment ID of the existing production Web App.
-
-### First deployment test
-
-After all three secrets exist:
-
-1. Open **GitHub -> Actions**
-2. Open **Deploy Apps Script**
-3. Choose **Run workflow**
-4. Verify these stages succeed:
-   - Configure clasp
-   - Show files to push
-   - Push Apps Script source
-   - Redeploy existing Web App
-   - Show deployments
-5. Open the existing Web App `/exec` URL and verify the health-check JSON.
-
-After the initial test, changes committed to `apps-script/**` on `main` deploy automatically.
-
-### Security
-
-Never commit:
-
-- `.clasprc.json`
-- `.clasp.json` containing production identifiers if repository policy treats them as private configuration
-- OAuth credentials
-- API keys
-- Web App shared secrets
-
-The repository includes `.gitignore` rules for local clasp configuration.
-
+Until then, use the manual workflow above.
