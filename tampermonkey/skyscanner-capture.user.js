@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.6
+// @version      1.6.7
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.6',
+    scriptVersion: '1.6.7',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -50,6 +50,7 @@
     lastSuccessfulSendAt: 0,
     ready: false,
     pageCompleted: false,
+    userBypassedLock: false,
     readyTimer: null
   };
 
@@ -1041,6 +1042,22 @@
       };
     }
 
+    if (state.pageCompleted) {
+      return {
+        color: '#188038',
+        symbol: '●',
+        label: 'Complete — safe to leave page'
+      };
+    }
+
+    if (state.userBypassedLock) {
+      return {
+        color: '#1a73e8',
+        symbol: '●',
+        label: 'UI override active — collection continues'
+      };
+    }
+
     if (state.sending) {
       return {
         color: '#1a73e8',
@@ -1051,19 +1068,11 @@
 
     const pending = getResultsNeedingSend().length;
 
-    if (state.pageCompleted && pending === 0) {
-      return {
-        color: '#188038',
-        symbol: '●',
-        label: 'Complete — safe to leave page'
-      };
-    }
-
-    if (state.pageCompleted && pending > 0) {
+    if (pending > 0) {
       return {
         color: '#f9ab00',
         symbol: '●',
-        label: 'New results detected — keep page open'
+        label: 'Collecting results — keep page open'
       };
     }
 
@@ -1223,7 +1232,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.6',
+        version: '1.6.7',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1323,6 +1332,79 @@
       .replace(/"/g, '&quot;');
   }
 
+  let interactionBlocker = null;
+  let savedBodyOverflow = '';
+  let savedHtmlOverflow = '';
+  let scrollLockCaptured = false;
+
+  function isInteractionLocked() {
+    return !state.pageCompleted && !state.userBypassedLock;
+  }
+
+  function createInteractionBlocker() {
+    if (interactionBlocker) return;
+
+    interactionBlocker = document.createElement('div');
+    interactionBlocker.id = 'skyscanner-sheet-collector-lock';
+
+    Object.assign(interactionBlocker.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '2147483646',
+      background: 'rgba(0, 0, 0, 0.025)',
+      cursor: 'wait',
+      display: 'none',
+      pointerEvents: 'auto'
+    });
+
+    interactionBlocker.setAttribute(
+      'aria-label',
+      'Skyscanner page temporarily locked while results are being captured'
+    );
+
+    document.body.appendChild(interactionBlocker);
+  }
+
+  function syncInteractionLock() {
+    if (!interactionBlocker) return;
+
+    const locked = isInteractionLocked();
+
+    interactionBlocker.style.display = locked ? 'block' : 'none';
+
+    if (locked) {
+      if (!scrollLockCaptured) {
+        savedBodyOverflow = document.body.style.overflow || '';
+        savedHtmlOverflow = document.documentElement.style.overflow || '';
+        scrollLockCaptured = true;
+      }
+
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else if (scrollLockCaptured) {
+      document.body.style.overflow = savedBodyOverflow;
+      document.documentElement.style.overflow = savedHtmlOverflow;
+      scrollLockCaptured = false;
+    }
+  }
+
+  function blockPageKeyboardWhileLocked(event) {
+    if (!isInteractionLocked()) return;
+
+    if (badge && badge.contains(event.target)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  document.addEventListener(
+    'keydown',
+    blockPageKeyboardWhileLocked,
+    true
+  );
+
   function createBadge() {
     badge = document.createElement('div');
     badge.id = 'skyscanner-sheet-collector-status';
@@ -1352,10 +1434,23 @@
   function updateBadge() {
     if (!badge) return;
 
+    syncInteractionLock();
+
     const visual = getReadyVisual();
 
     const errorLine = state.lastError
       ? `<div style="margin-top:7px;color:#ffd0d0"><b>Error:</b> ${escapeHtml(state.lastError)}</div>`
+      : '';
+
+    const overrideButton = isInteractionLocked()
+      ? `
+        <div style="margin-top:9px">
+          <button
+            id="fac2s-override"
+            style="cursor:pointer;padding:6px 10px;font-weight:700"
+          >Use page anyway</button>
+        </div>
+      `
       : '';
 
     badge.innerHTML = `
@@ -1370,31 +1465,24 @@
       <div><b>Inserted / updated / filtered:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
       <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
       ${errorLine}
-
-      <div style="display:flex;gap:6px;margin-top:9px">
-        <button id="fac2s-scan" style="cursor:pointer;padding:4px 7px">Scan now</button>
-        <button id="fac2s-send" style="cursor:pointer;padding:4px 7px">Send now</button>
-        <button id="fac2s-test" style="cursor:pointer;padding:4px 7px">Test backend</button>
-      </div>
+      ${overrideButton}
     `;
 
-    badge.querySelector('#fac2s-scan')?.addEventListener('click', event => {
-      event.stopPropagation();
-      clearReadyState('Manual scan');
-      scanPage();
-    });
+    badge.querySelector('#fac2s-override')?.addEventListener(
+      'click',
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
 
-    badge.querySelector('#fac2s-send')?.addEventListener('click', event => {
-      event.stopPropagation();
-      clearReadyState('Manual send');
-      scanPage();
-      sendPendingResults();
-    });
+        state.userBypassedLock = true;
+        state.lastStatus = state.sending
+          ? 'UI override active — upload continues'
+          : 'UI override active — collection continues';
 
-    badge.querySelector('#fac2s-test')?.addEventListener('click', event => {
-      event.stopPropagation();
-      testBackend();
-    });
+        syncInteractionLock();
+        updateBadge();
+      }
+    );
   }
 
   function testBackend() {
@@ -1482,6 +1570,7 @@
       state.lastResultChangeAt = Date.now();
       state.lastSuccessfulSendAt = 0;
       state.pageCompleted = false;
+      state.userBypassedLock = false;
       clearReadyState('New search — waiting for results');
 
       setTimeout(scanPage, 2000);
@@ -1510,6 +1599,8 @@
     log('Starting');
     state.lastResultChangeAt = Date.now();
     state.pageCompleted = false;
+    state.userBypassedLock = false;
+    createInteractionBlocker();
     createBadge();
     clearReadyState('Waiting for Skyscanner results');
     startObserver();
