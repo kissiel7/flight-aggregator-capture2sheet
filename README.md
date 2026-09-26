@@ -124,39 +124,9 @@ A small status badge appears at the bottom-right of the page. Clicking it forces
 
 ## Google Sheet columns
 
-The current backend maintains this preferred column order:
+The active schema is documented in **Current compact result schema** below.
 
-```text
-origin
-destination
-outbound_date
-depart_time
-inbound_date
-arrive_time
-duration
-stops
-price
-total_price
-currency
-airlines
-self_transfer
-adults
-children
-cabin
-search_url
-dedupe_key
-itinerary_key
-first_seen
-last_seen
-seen_count
-captured_at_client
-source
-price_text
-config_url
-raw_text
-```
-
-If the existing `Skyscanner Results` tab contains exactly these columns in an older order, the Apps Script automatically migrates the table by header name and preserves the existing row values.
+The live table is intentionally optimized for compact visual use while Apps Script maps those display headers to stable internal field names.
 
 ## Update workflow
 
@@ -354,16 +324,9 @@ Existing test rows that were already converted to the wrong underlying value typ
 
 ## 2026-09-26 route/price extraction refinement
 
-Tampermonkey 1.4.0 makes the rendered Skyscanner card authoritative for actual connection details:
+This earlier one-way schema was superseded by the compact outbound/inbound schema introduced in Tampermonkey 1.5.0.
 
-- `origin` and `destination` are extracted from the visible itinerary codes (for example `BER`, `TFS`, `TFN`) rather than relying only on Skyscanner's search-area URL codes such as `TENE`.
-- `inbound_date` is currently defined as the **arrival date of the displayed connection**, paired with `arrive_time`. A `+1` or German `einen Tag später` advances the date accordingly.
-- `duration`, `stops`, `airlines`, and `self_transfer` support the German result-card wording observed on skyscanner.de.
-- `total_price` stores the visible total price for all travelers, while `price` remains the visible per-person price.
-
-For a one-way search (`rtn=0`), `inbound_date` still has a useful value because it means arrival date, not return-search date.
-
-
+The current implementation uses separate `Out_*` and `In_*` fields, combined ISO datetime cells, `Price_PP` / `Price_Total`, and compact human-friendly keys. See **Current compact result schema**.
 
 ## Current compact result schema
 
