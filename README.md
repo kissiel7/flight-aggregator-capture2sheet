@@ -441,3 +441,15 @@ The compact panel now shows only:
 
 Low-value telemetry such as `Results extracted`, `Pending`, HTTP status, last scan time, and last send time is intentionally hidden from the panel.
 
+
+
+### Readiness timer fix (Tampermonkey 1.6.1)
+
+Skyscanner continuously mutates its DOM. In 1.6.0, unchanged DOM-driven rescans could repeatedly restart the 3.5-second readiness timer, preventing the green **Complete — safe to leave page** state from appearing.
+
+Version 1.6.1 changes the logic so that:
+
+- ordinary DOM mutations / unchanged rescans do **not** restart the readiness timer;
+- only an actual new or changed extracted flight result resets the stabilization period;
+- after a successful send and a stable result set, the indicator can reach green even while Skyscanner continues updating unrelated page elements.
+
