@@ -441,9 +441,9 @@ Once the current Skyscanner URL has reached the green **Complete — safe to lea
 
 ## Server-side result filters
 
-The Google Apps Script backend supports optional filters from the `Filters` tab. Filters are applied **at spreadsheet injection time**, so Tampermonkey can still capture all rendered Skyscanner results while the backend decides which new itineraries are allowed into `Skyscanner Results`.
+The Google Apps Script backend supports optional filters from the `Guide & Filters` tab. Filters are applied **at spreadsheet injection time**, so Tampermonkey can still capture all rendered Skyscanner results while the backend decides which new itineraries are allowed into `Skyscanner Results`.
 
-The `Filters` tab uses column A for the filter name and column B for the value:
+The `Guide & Filters` tab uses column A for the filter name and column B for the value:
 
 ```text
 A                         B
@@ -520,4 +520,20 @@ init();
 ```
 
 This keeps the two machine-local values easy to preserve when replacing the script from GitHub. The constants do not need to be declared near the top; they only need to be initialized before `init()` starts code that reads them.
+
+
+
+## Guide & Filters tab
+
+The first spreadsheet tab is named `Guide & Filters`.
+
+It combines three purposes in one human-readable reference page:
+
+- editable server-side capture filters;
+- a short explanation of the capture/filter/store workflow;
+- a legend for the columns used in `Skyscanner Results`.
+
+The filter input cells are highlighted in the Value column. Blank filter values disable that filter. Existing result rows are never deleted by these filters.
+
+The Apps Script backend reads the filter rows by their labels, so the additional guide/legend content does not affect filtering.
 
