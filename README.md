@@ -537,3 +537,39 @@ The filter input cells are highlighted in the Value column. Blank filter values 
 
 The Apps Script backend reads the filter rows by their labels, so the additional guide/legend content does not affect filtering.
 
+
+
+## Temporary Skyscanner UI lock
+
+Tampermonkey 1.6.7 temporarily blocks interaction with the Skyscanner page while the initial result set is being collected, sent to the backend, and allowed to settle.
+
+The implementation deliberately does **not** pause Skyscanner itself. The page continues rendering and the collector continues scanning underneath a transparent interaction blocker.
+
+The existing collector status panel remains in its normal bottom-right position and stays clickable above the blocker. Its three previous action buttons were removed and replaced by one contextual button:
+
+```text
+Use page anyway
+```
+
+Pressing this button:
+
+- releases the page UI immediately;
+- does not cancel scanning;
+- does not cancel an active backend request;
+- does not clear discovered or pending results;
+- keeps collection/upload running in the background.
+
+The override is scoped to the current Skyscanner URL. Navigating to a new search URL resets the override and activates the interaction lock again.
+
+The page also unlocks automatically after the first successful completed capture cycle, when:
+
+```text
+at least one backend send has succeeded
+AND no unsent extracted results remain
+AND results have remained stable for the settle window
+```
+
+Once the current URL has completed or has been manually overridden, later background DOM changes do not re-lock the page.
+
+While locked, pointer interaction and page scrolling are blocked, and page-level keyboard input is suppressed. The collector panel remains interactive so the override button can always be used.
+
