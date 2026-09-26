@@ -124,9 +124,25 @@ A small status badge appears at the bottom-right of the page. Clicking it forces
 
 ## Google Sheet columns
 
-The current backend maintains:
+The current backend maintains this preferred column order:
 
 ```text
+origin
+destination
+outbound_date
+depart_time
+inbound_date
+arrive_time
+duration
+stops
+price
+currency
+airlines
+self_transfer
+adults
+children
+cabin
+search_url
 dedupe_key
 itinerary_key
 first_seen
@@ -134,26 +150,12 @@ last_seen
 seen_count
 captured_at_client
 source
-search_url
-origin
-destination
-outbound_date
-inbound_date
-adults
-children
-cabin
-price
-currency
 price_text
-airlines
-depart_time
-arrive_time
-duration
-stops
-self_transfer
 config_url
 raw_text
 ```
+
+If the existing `Skyscanner Results` tab contains exactly these columns in an older order, the Apps Script automatically migrates the table by header name and preserves the existing row values.
 
 ## Update workflow
 
