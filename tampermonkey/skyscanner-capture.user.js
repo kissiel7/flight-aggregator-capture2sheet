@@ -800,11 +800,13 @@
       outLeg.arrival_dt,
       outLeg.duration,
       outLeg.stops,
+      outLeg.stop_airports,
       outLeg.airlines,
       inLeg.departure_dt,
       inLeg.arrival_dt,
       inLeg.duration,
       inLeg.stops,
+      inLeg.stop_airports,
       inLeg.airlines
     ].join('|');
 
