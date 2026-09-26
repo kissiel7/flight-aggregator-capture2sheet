@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.2
+// @version      1.6.3
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -38,6 +38,7 @@
     lastSendTime: 0,
     totalServerInserted: 0,
     totalServerUpdated: 0,
+    totalServerFiltered: 0,
     lastStatus: 'Starting',
     lastCandidateCount: 0,
     lastPendingCount: 0,
@@ -1181,7 +1182,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.2',
+        version: '1.6.3',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1223,6 +1224,7 @@
 
           state.totalServerInserted += Number(body.inserted || 0);
           state.totalServerUpdated += Number(body.updated || 0);
+          state.totalServerFiltered += Number(body.filtered || 0);
           state.lastPendingCount = getResultsNeedingSend().length;
           state.lastSuccessfulSendAt = Date.now();
           state.ready = false;
@@ -1324,7 +1326,7 @@
 
       <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
-      <div><b>Inserted / updated:</b> ${state.totalServerInserted} / ${state.totalServerUpdated}</div>
+      <div><b>Inserted / updated / filtered:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
       <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
       ${errorLine}
 
