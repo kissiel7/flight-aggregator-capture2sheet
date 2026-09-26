@@ -169,3 +169,35 @@ A later improvement can move Apps Script deployment to `clasp` so source synchro
 ## Planned extensions
 
 The architecture deliberately separates browser extraction from Sheet storage so additional flight aggregators can later reuse the same backend pattern.
+
+
+## Collector status panel
+
+Tampermonkey version 1.1.0 adds a persistent diagnostic panel on Skyscanner result pages.
+
+It shows:
+
+- current collector status
+- Skyscanner cards detected
+- results successfully extracted
+- pending unsent results
+- cumulative inserted / updated row counts returned by Apps Script
+- backend health-check result
+- last HTTP status
+- last scan and send timestamps
+- last transport or backend error
+
+Controls:
+
+- **Scan now** — force immediate DOM scan
+- **Send now** — scan and immediately attempt to POST pending results
+- **Test backend** — GET the Apps Script Web App URL and verify that the deployed backend can see the target spreadsheet
+
+### Troubleshooting interpretation
+
+- **No status panel at all**: Tampermonkey script is not running on the current URL; check whether the userscript is enabled and whether the Skyscanner hostname matches the userscript rules.
+- **Backend = OK, Cards detected = 0**: browser-to-Google connectivity works; Skyscanner DOM selectors need adjustment.
+- **Cards detected > 0, Results extracted = 0**: candidate cards are found, but extraction logic rejects them.
+- **Pending > 0, HTTP blank**: results exist but no POST completed yet.
+- **HTTP 200 + Saved**: Apps Script accepted the batch; inspect `Skyscanner Results`.
+- **Backend error / Network error / Timeout**: troubleshoot deployment URL, Web App permissions, Tampermonkey `@connect`, or Apps Script deployment.
