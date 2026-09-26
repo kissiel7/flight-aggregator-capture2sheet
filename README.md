@@ -592,3 +592,21 @@ Tampermonkey 1.6.8 fixes this by:
 - recognizing both English and German accessibility labels, including `Flight option`, `Total cost`, `Flugoption`, `Gesamtpreis`, and `Gesamtkosten`;
 - applying the same multilingual handling when extracting result-card accessibility text.
 
+
+
+### Per-search result counters (Tampermonkey 1.6.9)
+
+The compact collector panel now uses:
+
+```text
+INS / UPD / REJ
+```
+
+where:
+
+- `INS` = newly inserted rows;
+- `UPD` = existing dedupe-key rows updated;
+- `REJ` = new results rejected by the active server-side filters.
+
+These counters are scoped to the current Skyscanner search page. They reset when the Skyscanner URL changes. A full browser-page reload naturally resets them as well because the userscript state is recreated.
+
