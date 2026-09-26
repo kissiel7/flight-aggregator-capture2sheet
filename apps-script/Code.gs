@@ -8,7 +8,7 @@
 const CONFIG = {
   SPREADSHEET_NAME: 'Flight Aggregator Capture',
   SHEET_NAME: 'Skyscanner Results',
-  FILTER_SHEET_NAME: 'Filters',
+  FILTER_SHEET_NAME: 'Guide & Filters',
   API_KEY_PROPERTY: 'SKYSCANNER_API_KEY'
 };
 
