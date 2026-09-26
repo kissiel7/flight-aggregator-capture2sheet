@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.4
+// @version      1.6.5
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -18,11 +18,8 @@
 (function () {
   'use strict';
 
-  const WEB_APP_URL = 'PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE';
-  const API_KEY = 'PASTE_YOUR_API_KEY_HERE';
-
   const CONFIG = {
-    scriptVersion: '1.6.4',
+    scriptVersion: '1.6.5',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -1188,7 +1185,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.4',
+        version: '1.6.5',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1484,6 +1481,13 @@
     setTimeout(testBackend, 2500);
     setInterval(scanPage, 15000);
   }
+
+  // ============================================================
+  // LOCAL CONFIGURATION
+  // Keep these values when replacing/updating the userscript.
+  // ============================================================
+  const WEB_APP_URL = 'PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE';
+  const API_KEY = 'PASTE_YOUR_API_KEY_HERE';
 
   init();
 })();
