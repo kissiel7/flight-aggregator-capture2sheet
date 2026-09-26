@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.0
+// @version      1.6.1
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -912,15 +912,32 @@
   }
 
   function scheduleReadyCheck() {
+    /*
+     * Do not restart an already scheduled readiness check merely because
+     * Skyscanner mutated the DOM and triggered another unchanged scan.
+     *
+     * Skyscanner updates the page very frequently. Restarting a 3.5 s timer
+     * on every DOM-driven scan can prevent the green state from ever being
+     * reached. Only a real extracted-result change clears/restarts the
+     * stabilization period (via clearReadyState / lastResultChangeAt).
+     */
     if (state.readyTimer) {
-      clearTimeout(state.readyTimer);
+      return;
     }
+
+    const stableFor =
+      Date.now() - Number(state.lastResultChangeAt || 0);
+
+    const remaining = Math.max(
+      0,
+      CONFIG.readyStabilizeMs - stableFor
+    );
 
     state.readyTimer = setTimeout(() => {
       state.readyTimer = null;
 
       const pending = getResultsNeedingSend();
-      const stableFor =
+      const stableNow =
         Date.now() - Number(state.lastResultChangeAt || 0);
 
       if (
@@ -928,7 +945,7 @@
         pending.length === 0 &&
         state.discovered.size > 0 &&
         state.lastSuccessfulSendAt > 0 &&
-        stableFor >= CONFIG.readyStabilizeMs
+        stableNow >= CONFIG.readyStabilizeMs
       ) {
         state.ready = true;
         state.lastStatus = 'Complete — safe to leave page';
@@ -941,8 +958,12 @@
         updateBadge();
       }
 
+      /*
+       * If we are not ready because a send is still active or pending,
+       * check again without allowing ordinary DOM rescans to postpone us.
+       */
       scheduleReadyCheck();
-    }, CONFIG.readyStabilizeMs);
+    }, remaining);
   }
 
   function getReadyVisual() {
@@ -1018,6 +1039,12 @@
     if (changed > 0) {
       state.lastResultChangeAt = Date.now();
       state.ready = false;
+
+      if (state.readyTimer) {
+        clearTimeout(state.readyTimer);
+        state.readyTimer = null;
+      }
+
       state.lastStatus = `Collecting ${state.discovered.size} results`;
       log('New/changed results:', changed, 'total:', state.discovered.size);
       scheduleSend();
@@ -1111,7 +1138,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.0',
+        version: '1.6.1',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
