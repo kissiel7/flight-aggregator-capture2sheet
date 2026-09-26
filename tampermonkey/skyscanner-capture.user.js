@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.2.0
+// @version      1.3.0
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -125,20 +125,41 @@
     const url = new URL(window.location.href);
     const parts = url.pathname.split('/').filter(Boolean);
 
-    const flightsIndex = parts.findIndex(
-      part => part.toLowerCase() === 'flights'
-    );
-
     let origin = '';
     let destination = '';
     let outboundDate = '';
     let inboundDate = '';
 
-    if (flightsIndex >= 0) {
-      origin = parts[flightsIndex + 1] || '';
-      destination = parts[flightsIndex + 2] || '';
-      outboundDate = decodeSkyscannerDate(parts[flightsIndex + 3] || '');
-      inboundDate = decodeSkyscannerDate(parts[flightsIndex + 4] || '');
+    /*
+     * Skyscanner localizes the route word in the URL:
+     *   /transport/flights/...
+     *   /transport/fluge/...
+     * etc.
+     *
+     * Therefore do not depend on the literal word "flights".
+     * The route structure after /transport/<localized-word>/ is stable.
+     */
+    const transportIndex = parts.findIndex(
+      part => part.toLowerCase() === 'transport'
+    );
+
+    if (transportIndex >= 0 && parts.length >= transportIndex + 5) {
+      origin = parts[transportIndex + 2] || '';
+      destination = parts[transportIndex + 3] || '';
+      outboundDate = decodeSkyscannerDate(parts[transportIndex + 4] || '');
+      inboundDate = decodeSkyscannerDate(parts[transportIndex + 5] || '');
+    } else {
+      /*
+       * Fallback for layouts without /transport/.
+       */
+      const dateIndex = parts.findIndex(part => /^\d{6,8}$/.test(part));
+
+      if (dateIndex >= 2) {
+        origin = parts[dateIndex - 2] || '';
+        destination = parts[dateIndex - 1] || '';
+        outboundDate = decodeSkyscannerDate(parts[dateIndex] || '');
+        inboundDate = decodeSkyscannerDate(parts[dateIndex + 1] || '');
+      }
     }
 
     return {
@@ -343,7 +364,14 @@
   }
 
   function extractAirlines(text) {
-    for (const regex of [/Flight with ([^.]+)\./i, /Operated by ([^.]+)\./i]) {
+    const patterns = [
+      /Flight with ([^.]+)\./i,
+      /Operated by ([^.]+)\./i,
+      /Flug mit (.+?)(?=\s+Abflug\b)/i,
+      /Durchgeführt von (.+?)(?=[.,]|$)/i
+    ];
+
+    for (const regex of patterns) {
       const match = text.match(regex);
       if (match) return normalizeWhitespace(match[1]);
     }
@@ -357,49 +385,58 @@
       arrive_time: ''
     };
 
-    const match = text.match(
-      /Departing from .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?).*?arriving in .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?)/i
-    );
+    const patterns = [
+      /Departing from .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?).*?arriving in .*? at ([0-9]{1,2}:[0-9]{2}(?:\s*[AP]M)?)/i,
+      /Abflug ab .*? um ([0-9]{1,2}:[0-9]{2}).*?Ankunft in .*? um ([0-9]{1,2}:[0-9]{2})/i
+    ];
 
-    if (match) {
-      result.depart_time = normalizeWhitespace(match[1]);
-      result.arrive_time = normalizeWhitespace(match[2]);
-      return result;
+    for (const regex of patterns) {
+      const match = text.match(regex);
+
+      if (match) {
+        result.depart_time = normalizeWhitespace(match[1]);
+        result.arrive_time = normalizeWhitespace(match[2]);
+        return result;
+      }
     }
 
-    const times = Array.from(
+    const values = Array.from(
       text.matchAll(/\b([0-2]?\d:[0-5]\d)\b/g)
     ).map(matchItem => matchItem[1]);
 
-    if (times.length >= 1) result.depart_time = times[0];
-    if (times.length >= 2) result.arrive_time = times[1];
+    if (values.length >= 1) result.depart_time = values[0];
+    if (values.length >= 2) result.arrive_time = values[1];
 
     return result;
   }
 
   function extractDuration(text) {
-    let match = text.match(
-      /taking\s+(\d+)\s*hours?\s*(\d+)?\s*minutes?/i
-    );
+    const patterns = [
+      /taking\s+(\d+)\s*hours?\s*(\d+)?\s*minutes?/i,
+      /Flugzeit von\s+(\d+)\s*Stunden?\s*(\d+)?\s*Minuten?/i,
+      /\b(\d{1,3})\s*Std\.\s*(\d{1,2})\s*Min\./i,
+      /\b(\d{1,3})h\s*(\d{1,2})m\b/i
+    ];
 
-    if (match) {
-      return match[1] + 'h ' + (match[2] || '0') + 'm';
-    }
+    for (const regex of patterns) {
+      const match = text.match(regex);
 
-    match = text.match(/\b(\d{1,3})h\s*(\d{1,2})m\b/i);
-
-    if (match) {
-      return match[1] + 'h ' + match[2] + 'm';
+      if (match) {
+        return match[1] + 'h ' + (match[2] || '0') + 'm';
+      }
     }
 
     return '';
   }
 
   function extractStops(text) {
-    if (/\bdirect\b/i.test(text)) return 0;
+    if (/\bdirect\b/i.test(text) || /\bdirekt\b/i.test(text)) return 0;
 
-    const numeric = text.match(/\b(\d+)\s+stops?\b/i);
-    if (numeric) return Number(numeric[1]);
+    let match = text.match(/\b(\d+)\s+stops?\b/i);
+    if (match) return Number(match[1]);
+
+    match = text.match(/\b(\d+)\s+Zwischenstopps?\b/i);
+    if (match) return Number(match[1]);
 
     if (/\bone stop\b/i.test(text)) return 1;
     if (/\btwo stops\b/i.test(text)) return 2;
@@ -411,7 +448,9 @@
   function extractSelfTransfer(text) {
     return Boolean(
       /self[- ]?transfer/i.test(text) ||
-      /change airports/i.test(text)
+      /change airports/i.test(text) ||
+      /eigenem Transfer/i.test(text) ||
+      /selbst(?:ständiger|staendiger)? Transfer/i.test(text)
     );
   }
 
@@ -437,18 +476,38 @@
     const search = getSearchMetadata();
     const configUrl = extractConfigUrl(element);
 
+    const price = extractPrice(rawText);
+    const times = extractTimes(rawText);
+    const airlines = extractAirlines(rawText);
+    const duration = extractDuration(rawText);
+    const stops = extractStops(rawText);
+    const selfTransfer = extractSelfTransfer(rawText);
+
     let itineraryKey = extractItineraryKey(configUrl);
 
     if (!itineraryKey) {
-      itineraryKey =
-        'fallback-' + fnv1a(normalizeForFingerprint(rawText));
+      /*
+       * Build the fallback from flight characteristics instead of the full
+       * result-card text. This prevents the same connection from becoming
+       * a new itinerary merely because Skyscanner changes provider/ad text
+       * or the visible "Flight option N" number.
+       */
+      const signature = [
+        airlines,
+        times.depart_time,
+        times.arrive_time,
+        duration,
+        stops,
+        selfTransfer
+      ]
+        .map(value => normalizeWhitespace(value).toLowerCase())
+        .join('|');
+
+      itineraryKey = 'fallback-' + fnv1a(signature);
     }
 
     const dedupeKey =
       buildQueryKey(search) + '|' + itineraryKey;
-
-    const price = extractPrice(rawText);
-    const times = extractTimes(rawText);
 
     return {
       dedupe_key: dedupeKey,
@@ -466,12 +525,12 @@
       price: price.price,
       currency: price.currency,
       price_text: price.price_text,
-      airlines: extractAirlines(rawText),
+      airlines: airlines,
       depart_time: times.depart_time,
       arrive_time: times.arrive_time,
-      duration: extractDuration(rawText),
-      stops: extractStops(rawText),
-      self_transfer: extractSelfTransfer(rawText),
+      duration: duration,
+      stops: stops,
+      self_transfer: selfTransfer,
       config_url: configUrl,
       raw_text: rawText
     };
@@ -604,7 +663,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.2.0',
+        version: '1.3.0',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
