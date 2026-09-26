@@ -573,3 +573,22 @@ Once the current URL has completed or has been manually overridden, later backgr
 
 While locked, pointer interaction and page scrolling are blocked, and page-level keyboard input is suppressed. The collector panel remains interactive so the override button can always be used.
 
+
+
+### Localized Skyscanner result-card discovery (Tampermonkey 1.6.8)
+
+Skyscanner localizes the route segment in result URLs. For example:
+
+```text
+/transport/flights/...   English
+/transport/fluge/...     German
+```
+
+Earlier collector versions still had one result-card selector hard-coded to `/transport/flights/`. On localized pages this could leave the collector at `Cards detected: 0` even while visible flight cards were already rendered, which in turn prevented the readiness state from ever reaching Complete.
+
+Tampermonkey 1.6.8 fixes this by:
+
+- detecting itinerary links via `/config/` without depending on the localized route word;
+- recognizing both English and German accessibility labels, including `Flight option`, `Total cost`, `Flugoption`, `Gesamtpreis`, and `Gesamtkosten`;
+- applying the same multilingual handling when extracting result-card accessibility text.
+
