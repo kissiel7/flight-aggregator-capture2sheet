@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.3
+// @version      1.6.4
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -22,6 +22,7 @@
   const API_KEY = 'PASTE_YOUR_API_KEY_HERE';
 
   const CONFIG = {
+    scriptVersion: '1.6.4',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -900,6 +901,7 @@
 
   function clearReadyState(reason = '') {
     state.ready = false;
+    state.pageCompleted = false;
 
     if (state.readyTimer) {
       clearTimeout(state.readyTimer);
@@ -913,16 +915,70 @@
     updateBadge();
   }
 
+  function canBeReadyNow() {
+    const pending = getResultsNeedingSend().length;
+    const stableFor =
+      Date.now() - Number(state.lastResultChangeAt || 0);
+
+    return (
+      !state.sending &&
+      pending === 0 &&
+      state.discovered.size > 0 &&
+      state.lastSuccessfulSendAt > 0 &&
+      stableFor >= CONFIG.readyStabilizeMs
+    );
+  }
+
+  function evaluateReadiness() {
+    if (state.lastError) {
+      state.ready = false;
+      updateBadge();
+      return;
+    }
+
+    if (canBeReadyNow()) {
+      state.ready = true;
+      state.pageCompleted = true;
+      state.lastStatus = 'Complete — safe to leave page';
+
+      if (state.readyTimer) {
+        clearTimeout(state.readyTimer);
+        state.readyTimer = null;
+      }
+
+      updateBadge();
+      return;
+    }
+
+    state.ready = false;
+
+    if (state.sending) {
+      updateBadge();
+      return;
+    }
+
+    const pending = getResultsNeedingSend().length;
+
+    if (pending > 0) {
+      state.lastStatus = state.pageCompleted
+        ? 'New results detected'
+        : 'Results pending';
+      updateBadge();
+      return;
+    }
+
+    if (
+      state.discovered.size > 0 &&
+      state.lastSuccessfulSendAt > 0
+    ) {
+      state.lastStatus = 'Sent — checking for more results';
+      scheduleReadyCheck();
+    }
+
+    updateBadge();
+  }
+
   function scheduleReadyCheck() {
-    /*
-     * Do not restart an already scheduled readiness check merely because
-     * Skyscanner mutated the DOM and triggered another unchanged scan.
-     *
-     * Skyscanner updates the page very frequently. Restarting a 3.5 s timer
-     * on every DOM-driven scan can prevent the green state from ever being
-     * reached. Only a real extracted-result change clears/restarts the
-     * stabilization period (via clearReadyState / lastResultChangeAt).
-     */
     if (state.readyTimer) {
       return;
     }
@@ -931,41 +987,13 @@
       Date.now() - Number(state.lastResultChangeAt || 0);
 
     const remaining = Math.max(
-      0,
+      25,
       CONFIG.readyStabilizeMs - stableFor
     );
 
     state.readyTimer = setTimeout(() => {
       state.readyTimer = null;
-
-      const pending = getResultsNeedingSend();
-      const stableNow =
-        Date.now() - Number(state.lastResultChangeAt || 0);
-
-      if (
-        !state.sending &&
-        pending.length === 0 &&
-        state.discovered.size > 0 &&
-        state.lastSuccessfulSendAt > 0 &&
-        stableNow >= CONFIG.readyStabilizeMs
-      ) {
-        state.ready = true;
-        state.pageCompleted = true;
-        state.lastStatus = 'Complete — safe to leave page';
-        updateBadge();
-        return;
-      }
-
-      if (!state.sending && state.discovered.size > 0) {
-        state.lastStatus = 'Waiting for results to settle';
-        updateBadge();
-      }
-
-      /*
-       * If we are not ready because a send is still active or pending,
-       * check again without allowing ordinary DOM rescans to postpone us.
-       */
-      scheduleReadyCheck();
+      evaluateReadiness();
     }, remaining);
   }
 
@@ -1065,12 +1093,6 @@
         state.readyTimer = null;
       }
 
-      /*
-       * After this URL has completed once, do not fall back to a generic
-       * "loading" state just because Skyscanner's DOM changed.
-       *
-       * Only unsent extracted data makes the page temporarily unsafe.
-       */
       if (state.lastPendingCount > 0) {
         state.ready = false;
         state.lastStatus = state.pageCompleted
@@ -1079,22 +1101,13 @@
 
         log('New/changed results:', changed, 'total:', state.discovered.size);
         scheduleSend();
-        scheduleReadyCheck();
-      } else if (state.pageCompleted) {
-        state.ready = true;
-        state.lastStatus = 'Complete — safe to leave page';
       }
     } else if (candidates.length === 0 && state.discovered.size === 0) {
+      state.ready = false;
       state.lastStatus = 'Waiting for Skyscanner results';
-    } else if (state.pageCompleted && state.lastPendingCount === 0) {
-      state.ready = true;
-      state.lastStatus = 'Complete — safe to leave page';
-    } else if (!state.ready && !state.sending) {
-      state.lastStatus = 'Waiting for results to settle';
-      scheduleReadyCheck();
     }
 
-    updateBadge();
+    evaluateReadiness();
   }
 
   function scheduleScan() {
@@ -1132,14 +1145,7 @@
     updateBadge();
 
     if (!pending.length) {
-      if (state.pageCompleted) {
-        state.ready = true;
-        state.lastStatus = 'Complete — safe to leave page';
-      } else {
-        state.lastStatus = 'Nothing pending';
-      }
-
-      updateBadge();
+      evaluateReadiness();
       return;
     }
 
@@ -1182,7 +1188,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.3',
+        version: '1.6.4',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1230,15 +1236,14 @@
           state.ready = false;
           state.lastStatus = 'Sent — checking for more results';
           state.lastError = '';
-          updateBadge();
 
           log('Server result:', body);
 
           if (getResultsNeedingSend().length) {
             scheduleSend();
-          } else {
-            scheduleReadyCheck();
           }
+
+          evaluateReadiness();
         } catch (error) {
           state.ready = false;
           state.lastStatus = 'Server error';
@@ -1325,6 +1330,7 @@
       </div>
 
       <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
+      <div><b>Version:</b> ${escapeHtml(CONFIG.scriptVersion)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
       <div><b>Inserted / updated / filtered:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
       <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
