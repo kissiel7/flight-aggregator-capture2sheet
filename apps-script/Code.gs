@@ -418,7 +418,8 @@ function reorderExistingTable_(sheet, currentHeaders) {
 
   sheet
     .getRange(1, 1, Math.max(lastRow, 1), Math.max(oldColumnCount, HEADERS.length))
-    .clearContent();
+    .clearContent()
+    .clearFormat();
 
   sheet
     .getRange(1, 1, 1, HEADERS.length)
@@ -434,36 +435,70 @@ function reorderExistingTable_(sheet, currentHeaders) {
 function formatSheet_(sheet) {
   sheet.setFrozenRows(1);
 
+  const dataRowCount = Math.max(sheet.getMaxRows() - 1, 1);
+
+  /*
+   * Reset data-cell number formats first. This is essential after a
+   * column-order migration; otherwise a time/date format left behind by
+   * an old column can be applied to a completely different field.
+   */
+  sheet
+    .getRange(2, 1, dataRowCount, HEADERS.length)
+    .setNumberFormat('@');
+
   sheet
     .getRange(1, 1, 1, HEADERS.length)
     .setFontWeight('bold');
 
-  const dataRowCount = Math.max(sheet.getMaxRows() - 1, 1);
+  const column = name => HEADERS.indexOf(name) + 1;
 
-  const firstSeenColumn = HEADERS.indexOf('first_seen') + 1;
-  const lastSeenColumn = HEADERS.indexOf('last_seen') + 1;
-  const priceColumn = HEADERS.indexOf('price') + 1;
-
+  // Server timestamps are real date/time values.
   sheet
-    .getRange(2, firstSeenColumn, dataRowCount, 1)
+    .getRange(2, column('first_seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
   sheet
-    .getRange(2, lastSeenColumn, dataRowCount, 1)
+    .getRange(2, column('last_seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
+  // Numeric fields.
   sheet
-    .getRange(2, priceColumn, dataRowCount, 1)
+    .getRange(2, column('price'), dataRowCount, 1)
     .setNumberFormat('#,##0.00');
 
-  sheet.setColumnWidth(HEADERS.indexOf('origin') + 1, 80);
-  sheet.setColumnWidth(HEADERS.indexOf('destination') + 1, 100);
-  sheet.setColumnWidth(HEADERS.indexOf('price') + 1, 90);
-  sheet.setColumnWidth(HEADERS.indexOf('currency') + 1, 70);
-  sheet.setColumnWidth(HEADERS.indexOf('airlines') + 1, 180);
-  sheet.setColumnWidth(HEADERS.indexOf('search_url') + 1, 250);
-  sheet.setColumnWidth(HEADERS.indexOf('config_url') + 1, 250);
-  sheet.setColumnWidth(HEADERS.indexOf('raw_text') + 1, 400);
+  for (const name of ['stops', 'adults', 'children', 'seen_count']) {
+    sheet
+      .getRange(2, column(name), dataRowCount, 1)
+      .setNumberFormat('0');
+  }
+
+  // Explicitly keep route/date/time fields as text.
+  for (const name of [
+    'origin',
+    'destination',
+    'outbound_date',
+    'depart_time',
+    'inbound_date',
+    'arrive_time',
+    'duration',
+    'cabin',
+    'currency',
+    'airlines',
+    'captured_at_client'
+  ]) {
+    sheet
+      .getRange(2, column(name), dataRowCount, 1)
+      .setNumberFormat('@');
+  }
+
+  sheet.setColumnWidth(column('origin'), 80);
+  sheet.setColumnWidth(column('destination'), 100);
+  sheet.setColumnWidth(column('price'), 90);
+  sheet.setColumnWidth(column('currency'), 70);
+  sheet.setColumnWidth(column('airlines'), 180);
+  sheet.setColumnWidth(column('search_url'), 250);
+  sheet.setColumnWidth(column('config_url'), 250);
+  sheet.setColumnWidth(column('raw_text'), 400);
 }
 
 function jsonResponse_(object) {
