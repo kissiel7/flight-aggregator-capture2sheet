@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.5
+// @version      1.6.6
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.5',
+    scriptVersion: '1.6.6',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -489,6 +489,37 @@
     return '';
   }
 
+  function extractStopAirports(text) {
+    if (!text || /\bDirektflug\b/i.test(text) || /\bDirekt\b/i.test(text)) {
+      return '';
+    }
+
+    /*
+     * Prefer the compact summary rendered by Skyscanner:
+     *   1 Zwischenstopp BCN
+     *   2 Zwischenstopps AMS , MAD
+     * and the equivalent English "stop(s)" form.
+     */
+    const patterns = [
+      /\b\d+\s+Zwischenstopps?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i,
+      /\b\d+\s+stops?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i
+    ];
+
+    for (const regex of patterns) {
+      const match = text.match(regex);
+
+      if (match) {
+        return match[1]
+          .split(',')
+          .map(code => code.trim().toUpperCase())
+          .filter(Boolean)
+          .join(',');
+      }
+    }
+
+    return '';
+  }
+
   function extractSelfTransfer(text) {
     return Boolean(
       /self[- ]?transfer/i.test(text) ||
@@ -692,6 +723,7 @@
         arrival_dt: '',
         duration: '',
         stops: '',
+        stop_airports: '',
         airlines: '',
         self_transfer: ''
       };
@@ -723,6 +755,7 @@
       ),
       duration: extractDuration(block),
       stops: extractStops(block),
+      stop_airports: extractStopAirports(block),
       airlines: extractAirlines(block),
       self_transfer: extractSelfTransfer(block)
     };
@@ -847,6 +880,7 @@
           arrival_dt: '',
           duration: '',
           stops: '',
+          stop_airports: '',
           airlines: '',
           self_transfer: ''
         };
@@ -872,6 +906,7 @@
       out_arrival_dt: outLeg.arrival_dt,
       out_duration: outLeg.duration,
       out_stops: outLeg.stops,
+      out_stop_airports: outLeg.stop_airports,
       out_airlines: outLeg.airlines,
       out_self_transfer: outLeg.self_transfer,
 
@@ -879,6 +914,7 @@
       in_arrival_dt: inLeg.arrival_dt,
       in_duration: inLeg.duration,
       in_stops: inLeg.stops,
+      in_stop_airports: inLeg.stop_airports,
       in_airlines: inLeg.airlines,
       in_self_transfer: inLeg.self_transfer,
 
@@ -1185,7 +1221,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.5',
+        version: '1.6.6',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
