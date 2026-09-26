@@ -8,8 +8,23 @@
 const CONFIG = {
   SPREADSHEET_NAME: 'Flight Aggregator Capture',
   SHEET_NAME: 'Skyscanner Results',
+  FILTER_SHEET_NAME: 'Filters',
   API_KEY_PROPERTY: 'SKYSCANNER_API_KEY'
 };
+
+const NUMERIC_FIELDS = new Set([
+  'out_stops',
+  'in_stops',
+  'price',
+  'total_price',
+  'adults',
+  'children'
+]);
+
+const BOOLEAN_FIELDS = new Set([
+  'out_self_transfer',
+  'in_self_transfer'
+]);
 
 const SCHEMA = [
   { header: 'Org', field: 'origin' },
@@ -124,13 +139,15 @@ function doPost(e) {
         received: 0,
         uniqueReceived: 0,
         inserted: 0,
-        updated: 0
+        updated: 0,
+        filtered: 0
       });
     }
 
     const spreadsheet = getSpreadsheetByExactName_();
     const sheet = getOrCreateSheet_(spreadsheet);
     ensureHeaders_(sheet);
+    const filters = readFilters_(spreadsheet);
 
     // Deduplicate within the request.
     const incomingMap = new Map();
@@ -172,6 +189,8 @@ function doPost(e) {
     const serverNow = new Date();
     const newRows = [];
     const updates = [];
+    let filtered = 0;
+    const filteredByReason = {};
 
     incoming.forEach(result => {
       const key = String(result.dedupe_key);
@@ -189,6 +208,16 @@ function doPost(e) {
           values: row
         });
       } else {
+        const filterDecision = matchesFilters_(result, filters);
+
+        if (!filterDecision.pass) {
+          filtered++;
+          const reason = filterDecision.reason || 'filtered';
+          filteredByReason[reason] =
+            (filteredByReason[reason] || 0) + 1;
+          return;
+        }
+
         row[firstSeenColumn] = serverNow;
         row[lastSeenColumn] = serverNow;
         row[seenCountColumn] = 1;
@@ -219,7 +248,10 @@ function doPost(e) {
       received: payload.results.length,
       uniqueReceived: incoming.length,
       inserted: newRows.length,
-      updated: updates.length
+      updated: updates.length,
+      filtered,
+      filteredByReason,
+      activeFilters: filters.active
     });
   } catch (error) {
     console.error(error);
@@ -283,8 +315,17 @@ function resultToRow_(result) {
 
     const value = result[field];
 
-    if (value === undefined || value === null) {
+    if (value === undefined || value === null || value === '') {
       return '';
+    }
+
+    if (NUMERIC_FIELDS.has(field)) {
+      const numeric = toFiniteNumber_(value);
+      return numeric === null ? '' : numeric;
+    }
+
+    if (BOOLEAN_FIELDS.has(field)) {
+      return toBoolean_(value);
     }
 
     if (typeof value === 'object' && !(value instanceof Date)) {
@@ -293,6 +334,235 @@ function resultToRow_(result) {
 
     return value;
   });
+}
+
+function readFilters_(spreadsheet) {
+  const defaults = {
+    maxInboundStops: null,
+    maxOutboundStops: null,
+    maxPricePP: null,
+    maxTotalPrice: null,
+    selfTransferAllowed: null,
+    active: []
+  };
+
+  const sheet = spreadsheet.getSheetByName(CONFIG.FILTER_SHEET_NAME);
+
+  if (!sheet || sheet.getLastRow() === 0) {
+    return defaults;
+  }
+
+  const rows = sheet
+    .getRange(1, 1, sheet.getLastRow(), 2)
+    .getDisplayValues();
+
+  rows.forEach(row => {
+    const label = String(row[0] || '').trim().toLowerCase();
+    const raw = String(row[1] || '').trim();
+
+    if (!label || raw === '') {
+      return;
+    }
+
+    if (label === 'max. inbound stops') {
+      defaults.maxInboundStops =
+        parseRequiredFilterNumber_(raw, row[0]);
+      defaults.active.push(row[0]);
+      return;
+    }
+
+    if (label === 'max. outbound stops') {
+      defaults.maxOutboundStops =
+        parseRequiredFilterNumber_(raw, row[0]);
+      defaults.active.push(row[0]);
+      return;
+    }
+
+    if (label === 'max pp price') {
+      defaults.maxPricePP =
+        parseRequiredFilterNumber_(raw, row[0]);
+      defaults.active.push(row[0]);
+      return;
+    }
+
+    if (label === 'max total price') {
+      defaults.maxTotalPrice =
+        parseRequiredFilterNumber_(raw, row[0]);
+      defaults.active.push(row[0]);
+      return;
+    }
+
+    if (label === 'self transfer') {
+      defaults.selfTransferAllowed =
+        parseSelfTransferFilter_(raw);
+      defaults.active.push(row[0]);
+    }
+  });
+
+  return defaults;
+}
+
+function parseRequiredFilterNumber_(value, label) {
+  const number = parseLocaleNumber_(value);
+
+  if (number === null || number < 0) {
+    throw new Error(
+      'Invalid value in Filters for "' +
+      label +
+      '": "' +
+      value +
+      '". Expected a non-negative number.'
+    );
+  }
+
+  return number;
+}
+
+function parseLocaleNumber_(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  let text = String(value || '')
+    .trim()
+    .replace(/\s/g, '');
+
+  if (!text) {
+    return null;
+  }
+
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+
+  if (comma >= 0 && dot >= 0) {
+    if (comma > dot) {
+      text = text.replace(/\./g, '').replace(',', '.');
+    } else {
+      text = text.replace(/,/g, '');
+    }
+  } else if (comma >= 0) {
+    text = text.replace(',', '.');
+  }
+
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseSelfTransferFilter_(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (
+    ['true', 'yes', 'y', '1', 'allow', 'allowed'].includes(normalized)
+  ) {
+    return true;
+  }
+
+  if (
+    [
+      'false',
+      'no',
+      'n',
+      '0',
+      'exclude',
+      'excluded',
+      'disallow',
+      'not allowed'
+    ].includes(normalized)
+  ) {
+    return false;
+  }
+
+  throw new Error(
+    'Invalid value in Filters for "Self transfer": "' +
+    value +
+    '". Use TRUE/ALLOW or FALSE/EXCLUDE.'
+  );
+}
+
+function matchesFilters_(result, filters) {
+  if (filters.maxOutboundStops !== null) {
+    const stops = toFiniteNumber_(result.out_stops);
+
+    if (stops === null) {
+      return { pass: false, reason: 'outbound_stops_missing' };
+    }
+
+    if (stops > filters.maxOutboundStops) {
+      return { pass: false, reason: 'outbound_stops' };
+    }
+  }
+
+  const hasInbound =
+    Boolean(result.in_departure_dt) ||
+    Boolean(result.in_arrival_dt);
+
+  if (
+    hasInbound &&
+    filters.maxInboundStops !== null
+  ) {
+    const stops = toFiniteNumber_(result.in_stops);
+
+    if (stops === null) {
+      return { pass: false, reason: 'inbound_stops_missing' };
+    }
+
+    if (stops > filters.maxInboundStops) {
+      return { pass: false, reason: 'inbound_stops' };
+    }
+  }
+
+  if (filters.maxPricePP !== null) {
+    const price = toFiniteNumber_(result.price);
+
+    if (price === null) {
+      return { pass: false, reason: 'price_pp_missing' };
+    }
+
+    if (price > filters.maxPricePP) {
+      return { pass: false, reason: 'price_pp' };
+    }
+  }
+
+  if (filters.maxTotalPrice !== null) {
+    const price = toFiniteNumber_(result.total_price);
+
+    if (price === null) {
+      return { pass: false, reason: 'price_total_missing' };
+    }
+
+    if (price > filters.maxTotalPrice) {
+      return { pass: false, reason: 'price_total' };
+    }
+  }
+
+  if (filters.selfTransferAllowed === false) {
+    if (
+      toBoolean_(result.out_self_transfer) ||
+      toBoolean_(result.in_self_transfer)
+    ) {
+      return { pass: false, reason: 'self_transfer' };
+    }
+  }
+
+  return { pass: true, reason: '' };
+}
+
+function toFiniteNumber_(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  return parseLocaleNumber_(value);
+}
+
+function toBoolean_(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  const normalized = String(value || '').trim().toLowerCase();
+
+  return ['true', '1', 'yes', 'y'].includes(normalized);
 }
 
 function validateApiKey_(payload) {
@@ -453,12 +723,37 @@ function formatSheet_(sheet) {
   const column = name => HEADERS.indexOf(name) + 1;
 
   sheet
-    .getRange(2, 1, dataRowCount, HEADERS.length)
-    .setNumberFormat('@');
-
-  sheet
     .getRange(1, 1, 1, HEADERS.length)
     .setFontWeight('bold');
+
+  const textColumns = [
+    'Org',
+    'Dst',
+    'Out_DayTimeD',
+    'Out_DayTimeL',
+    'Out_Dur',
+    'Out_Airlines',
+    'In_DayTimeD',
+    'In_DayTimeL',
+    'In_Dur',
+    'In_Airlines',
+    'Curr',
+    'cabin',
+    'Search_URL',
+    'source',
+    'captured_at_client',
+    'price_text',
+    'dedupe_key',
+    'itinerary_key',
+    'config_url',
+    'raw_text'
+  ];
+
+  textColumns.forEach(name => {
+    sheet
+      .getRange(2, column(name), dataRowCount, 1)
+      .setNumberFormat('@');
+  });
 
   for (const name of ['Price_PP', 'Price_Total']) {
     sheet
