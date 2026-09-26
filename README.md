@@ -464,3 +464,53 @@ Once the current Skyscanner URL has reached the green **Complete — safe to lea
 - if a later scan finds nothing pending, the panel remains green;
 - navigating to a new Skyscanner search URL resets the readiness state and starts the initial loading/collecting cycle again.
 
+
+
+## Server-side result filters
+
+The Google Apps Script backend supports optional filters from the `Filters` tab. Filters are applied **at spreadsheet injection time**, so Tampermonkey can still capture all rendered Skyscanner results while the backend decides which new itineraries are allowed into `Skyscanner Results`.
+
+The `Filters` tab uses column A for the filter name and column B for the value:
+
+```text
+A                         B
+Max. inbound stops        <number>
+Max. outbound stops       <number>
+Max PP price              <number>
+Max total price           <number>
+Self transfer             <TRUE/FALSE or ALLOW/EXCLUDE>
+```
+
+A blank value in column B disables that filter.
+
+Semantics:
+
+- `Max. inbound stops`: applies only when an inbound/return leg exists; one-way results ignore it.
+- `Max. outbound stops`: maximum outbound stop count.
+- `Max PP price`: maximum per-person price.
+- `Max total price`: maximum total itinerary price.
+- `Self transfer = TRUE` or `ALLOW`: self-transfer itineraries are permitted.
+- `Self transfer = FALSE` or `EXCLUDE`: new itineraries with self-transfer on either leg are rejected.
+
+Filters apply only to **new rows**. If an itinerary already exists in `Skyscanner Results`, it can still be updated even if its latest observation is outside the current filter limits. Existing rows are never deleted by this filter mechanism.
+
+If an active numeric filter is configured but the corresponding extracted value is missing, the new result is rejected rather than silently admitted. This is intentionally fail-closed.
+
+The backend response includes `filtered`, `filteredByReason`, and `activeFilters`. Tampermonkey 1.6.3 displays cumulative `Inserted / updated / filtered` counts in the compact status panel.
+
+### Numeric spreadsheet values
+
+Numeric result fields are explicitly coerced to JavaScript numbers in Apps Script before writing:
+
+```text
+Out_Stop
+In_Stop
+Price_PP
+Price_Total
+AD
+CH
+seen_count
+```
+
+The spreadsheet formatting no longer applies a blanket text format to the entire data area. Numeric columns receive numeric formats directly, while text formatting is restricted to text columns. This keeps prices and counts usable for native Google Sheets sorting, filtering, formulas, comparisons, and charts.
+
