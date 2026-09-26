@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'apps-script/**'
-      - '.github/workflows/deploy-apps-script.yml'
   workflow_dispatch:
 
 permissions:
