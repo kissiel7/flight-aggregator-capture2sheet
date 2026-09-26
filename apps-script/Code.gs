@@ -12,6 +12,22 @@ const CONFIG = {
 };
 
 const HEADERS = [
+  'origin',
+  'destination',
+  'outbound_date',
+  'depart_time',
+  'inbound_date',
+  'arrive_time',
+  'duration',
+  'stops',
+  'price',
+  'currency',
+  'airlines',
+  'self_transfer',
+  'adults',
+  'children',
+  'cabin',
+  'search_url',
   'dedupe_key',
   'itinerary_key',
   'first_seen',
@@ -19,23 +35,7 @@ const HEADERS = [
   'seen_count',
   'captured_at_client',
   'source',
-  'search_url',
-  'origin',
-  'destination',
-  'outbound_date',
-  'inbound_date',
-  'adults',
-  'children',
-  'cabin',
-  'price',
-  'currency',
   'price_text',
-  'airlines',
-  'depart_time',
-  'arrive_time',
-  'duration',
-  'stops',
-  'self_transfer',
   'config_url',
   'raw_text'
 ];
@@ -329,29 +329,106 @@ function ensureHeaders_(sheet) {
     return;
   }
 
+  const lastColumn = Math.max(sheet.getLastColumn(), HEADERS.length);
+
   const currentHeaders = sheet
-    .getRange(1, 1, 1, HEADERS.length)
-    .getValues()[0];
+    .getRange(1, 1, 1, lastColumn)
+    .getValues()[0]
+    .map(value => String(value || '').trim());
 
-  const different = HEADERS.some(
-    (header, index) => currentHeaders[index] !== header
-  );
+  const populatedHeaders = currentHeaders.filter(Boolean);
 
-  if (different && sheet.getLastRow() > 1) {
-    throw new Error(
-      'The existing "' +
-      CONFIG.SHEET_NAME +
-      '" tab has a different column structure. No data was changed.'
-    );
+  const exactMatch =
+    populatedHeaders.length === HEADERS.length &&
+    HEADERS.every((header, index) => populatedHeaders[index] === header);
+
+  if (exactMatch) {
+    sheet.setFrozenRows(1);
+    return;
   }
 
-  if (different) {
+  /*
+   * Safe automatic migration:
+   *
+   * If the existing table contains exactly the same named columns but in
+   * another order, rewrite the table into the preferred HEADERS order.
+   * Data is mapped by header name, so no values are lost.
+   */
+  const currentSet = new Set(populatedHeaders);
+  const targetSet = new Set(HEADERS);
+
+  const sameColumns =
+    currentSet.size === HEADERS.length &&
+    targetSet.size === HEADERS.length &&
+    HEADERS.every(header => currentSet.has(header));
+
+  if (sameColumns) {
+    reorderExistingTable_(sheet, populatedHeaders);
+    sheet.setFrozenRows(1);
+    formatSheet_(sheet);
+    return;
+  }
+
+  /*
+   * Empty / header-only tabs may be repaired directly.
+   */
+  if (sheet.getLastRow() <= 1) {
+    sheet.clearContents();
+
     sheet
       .getRange(1, 1, 1, HEADERS.length)
       .setValues([HEADERS]);
+
+    sheet.setFrozenRows(1);
+    return;
   }
 
-  sheet.setFrozenRows(1);
+  throw new Error(
+    'The existing "' +
+    CONFIG.SHEET_NAME +
+    '" tab contains a different set of columns. No data was changed.'
+  );
+}
+
+function reorderExistingTable_(sheet, currentHeaders) {
+  const lastRow = sheet.getLastRow();
+  const oldColumnCount = currentHeaders.length;
+
+  const rows =
+    lastRow > 1
+      ? sheet
+          .getRange(2, 1, lastRow - 1, oldColumnCount)
+          .getValues()
+      : [];
+
+  const indexByHeader = new Map();
+
+  currentHeaders.forEach((header, index) => {
+    if (header) {
+      indexByHeader.set(header, index);
+    }
+  });
+
+  const reorderedRows = rows.map(row =>
+    HEADERS.map(header => {
+      const sourceIndex = indexByHeader.get(header);
+      return sourceIndex === undefined ? '' : row[sourceIndex];
+    })
+  );
+
+  sheet
+    .getRange(1, 1, Math.max(lastRow, 1), Math.max(oldColumnCount, HEADERS.length))
+    .clearContent();
+
+  sheet
+    .getRange(1, 1, 1, HEADERS.length)
+    .setValues([HEADERS]);
+
+  if (reorderedRows.length > 0) {
+    sheet
+      .getRange(2, 1, reorderedRows.length, HEADERS.length)
+      .setValues(reorderedRows);
+  }
 }
 
 function formatSheet_(sheet) {
