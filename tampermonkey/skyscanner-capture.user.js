@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.5.0
+// @version      1.6.0
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -25,6 +25,7 @@
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
+    readyStabilizeMs: 3500,
     debug: true
   };
 
@@ -45,7 +46,11 @@
     lastError: '',
     backendHealth: 'not tested',
     lastScanAt: '',
-    lastSendAt: ''
+    lastSendAt: '',
+    lastResultChangeAt: 0,
+    lastSuccessfulSendAt: 0,
+    ready: false,
+    readyTimer: null
   };
 
   function log(...args) {
@@ -891,6 +896,87 @@
     };
   }
 
+  function clearReadyState(reason = '') {
+    state.ready = false;
+
+    if (state.readyTimer) {
+      clearTimeout(state.readyTimer);
+      state.readyTimer = null;
+    }
+
+    if (reason) {
+      state.lastStatus = reason;
+    }
+
+    updateBadge();
+  }
+
+  function scheduleReadyCheck() {
+    if (state.readyTimer) {
+      clearTimeout(state.readyTimer);
+    }
+
+    state.readyTimer = setTimeout(() => {
+      state.readyTimer = null;
+
+      const pending = getResultsNeedingSend();
+      const stableFor =
+        Date.now() - Number(state.lastResultChangeAt || 0);
+
+      if (
+        !state.sending &&
+        pending.length === 0 &&
+        state.discovered.size > 0 &&
+        state.lastSuccessfulSendAt > 0 &&
+        stableFor >= CONFIG.readyStabilizeMs
+      ) {
+        state.ready = true;
+        state.lastStatus = 'Complete — safe to leave page';
+        updateBadge();
+        return;
+      }
+
+      if (!state.sending && state.discovered.size > 0) {
+        state.lastStatus = 'Waiting for results to settle';
+        updateBadge();
+      }
+
+      scheduleReadyCheck();
+    }, CONFIG.readyStabilizeMs);
+  }
+
+  function getReadyVisual() {
+    if (state.lastError) {
+      return {
+        color: '#d93025',
+        symbol: '●',
+        label: 'Error — keep page open'
+      };
+    }
+
+    if (state.sending) {
+      return {
+        color: '#1a73e8',
+        symbol: '●',
+        label: 'Sending — keep page open'
+      };
+    }
+
+    if (state.ready) {
+      return {
+        color: '#188038',
+        symbol: '●',
+        label: 'Complete — safe to leave page'
+      };
+    }
+
+    return {
+      color: '#f9ab00',
+      symbol: '●',
+      label: 'Loading / collecting — keep page open'
+    };
+  }
+
   function scanPage() {
     const candidates = findCandidateElements();
     state.lastCandidateCount = candidates.length;
@@ -928,16 +1014,22 @@
     }
 
     state.lastPendingCount = getResultsNeedingSend().length;
-    state.lastStatus =
-      candidates.length === 0
-        ? 'No result cards detected'
-        : `Extracted ${state.discovered.size}`;
-    updateBadge();
 
     if (changed > 0) {
+      state.lastResultChangeAt = Date.now();
+      state.ready = false;
+      state.lastStatus = `Collecting ${state.discovered.size} results`;
       log('New/changed results:', changed, 'total:', state.discovered.size);
       scheduleSend();
+      scheduleReadyCheck();
+    } else if (candidates.length === 0 && state.discovered.size === 0) {
+      state.lastStatus = 'Waiting for Skyscanner results';
+    } else if (!state.ready && !state.sending) {
+      state.lastStatus = 'Waiting for results to settle';
+      scheduleReadyCheck();
     }
+
+    updateBadge();
   }
 
   function scheduleScan() {
@@ -1008,6 +1100,7 @@
     }
 
     state.sending = true;
+    state.ready = false;
     state.lastSendTime = Date.now();
     state.lastSendAt = new Date().toLocaleTimeString();
     state.lastStatus = `Sending ${pending.length}`;
@@ -1018,7 +1111,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.5.0',
+        version: '1.6.0',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1061,9 +1154,9 @@
           state.totalServerInserted += Number(body.inserted || 0);
           state.totalServerUpdated += Number(body.updated || 0);
           state.lastPendingCount = getResultsNeedingSend().length;
-          state.lastStatus =
-            `Saved: +${Number(body.inserted || 0)} new, ` +
-            `${Number(body.updated || 0)} updated`;
+          state.lastSuccessfulSendAt = Date.now();
+          state.ready = false;
+          state.lastStatus = 'Sent — checking for more results';
           state.lastError = '';
           updateBadge();
 
@@ -1071,8 +1164,11 @@
 
           if (getResultsNeedingSend().length) {
             scheduleSend();
+          } else {
+            scheduleReadyCheck();
           }
         } catch (error) {
+          state.ready = false;
           state.lastStatus = 'Server error';
           state.lastError = String(error && error.message ? error.message : error);
           updateBadge();
@@ -1087,6 +1183,7 @@
 
       onerror(error) {
         state.sending = false;
+        state.ready = false;
         state.lastStatus = 'Network error';
         state.lastError = JSON.stringify(error || {});
         updateBadge();
@@ -1095,6 +1192,7 @@
 
       ontimeout() {
         state.sending = false;
+        state.ready = false;
         state.lastStatus = 'Timeout';
         state.lastError = 'POST request timed out after 30 seconds';
         updateBadge();
@@ -1111,13 +1209,6 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  }
-
-  function statusSymbol() {
-    if (state.sending) return '↗';
-    if (/error|timeout|unauthorized|configure/i.test(state.lastStatus)) return '⚠';
-    if (/saved|extracted|nothing pending/i.test(state.lastStatus)) return '✓';
-    return '•';
   }
 
   function createBadge() {
@@ -1149,27 +1240,22 @@
   function updateBadge() {
     if (!badge) return;
 
-    const pending = getResultsNeedingSend().length;
-    state.lastPendingCount = pending;
+    const visual = getReadyVisual();
 
     const errorLine = state.lastError
-      ? `<div style="margin-top:6px;color:#ffd0d0"><b>Error:</b> ${escapeHtml(state.lastError)}</div>`
+      ? `<div style="margin-top:7px;color:#ffd0d0"><b>Error:</b> ${escapeHtml(state.lastError)}</div>`
       : '';
 
     badge.innerHTML = `
-      <div style="font-weight:700;font-size:13px;margin-bottom:7px">
-        ${statusSymbol()} Skyscanner → Sheets
+      <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:8px">
+        <span style="font-size:19px;line-height:1;color:${visual.color}">${visual.symbol}</span>
+        <span>${escapeHtml(visual.label)}</span>
       </div>
 
       <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
-      <div><b>Results extracted:</b> ${state.discovered.size}</div>
-      <div><b>Pending:</b> ${pending}</div>
       <div><b>Inserted / updated:</b> ${state.totalServerInserted} / ${state.totalServerUpdated}</div>
       <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
-      <div><b>HTTP:</b> ${escapeHtml(state.lastHttpStatus || '-')}</div>
-      <div><b>Last scan:</b> ${escapeHtml(state.lastScanAt || '-')}</div>
-      <div><b>Last send:</b> ${escapeHtml(state.lastSendAt || '-')}</div>
       ${errorLine}
 
       <div style="display:flex;gap:6px;margin-top:9px">
@@ -1181,11 +1267,13 @@
 
     badge.querySelector('#fac2s-scan')?.addEventListener('click', event => {
       event.stopPropagation();
+      clearReadyState('Manual scan');
       scanPage();
     });
 
     badge.querySelector('#fac2s-send')?.addEventListener('click', event => {
       event.stopPropagation();
+      clearReadyState('Manual send');
       scanPage();
       sendPendingResults();
     });
@@ -1278,8 +1366,9 @@
 
       state.discovered.clear();
       state.sentSnapshot.clear();
-      state.lastStatus = 'New search';
-      updateBadge();
+      state.lastResultChangeAt = Date.now();
+      state.lastSuccessfulSendAt = 0;
+      clearReadyState('New search — waiting for results');
 
       setTimeout(scanPage, 2000);
     }, 1000);
@@ -1305,7 +1394,9 @@
 
   function init() {
     log('Starting');
+    state.lastResultChangeAt = Date.now();
     createBadge();
+    clearReadyState('Waiting for Skyscanner results');
     startObserver();
     watchUrl();
 
