@@ -1,0 +1,90 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps-script/**'
+      - '.github/workflows/deploy-apps-script.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install --global @google/clasp@3
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          APPS_SCRIPT_DEPLOYMENT_ID: ${{ secrets.APPS_SCRIPT_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$CLASP_JSON" ]]; then
+            echo "::error::Missing GitHub Actions secret CLASP_JSON"
+            exit 1
+          fi
+
+          if [[ -z "$CLASPRC_JSON" ]]; then
+            echo "::error::Missing GitHub Actions secret CLASPRC_JSON"
+            exit 1
+          fi
+
+          if [[ -z "$APPS_SCRIPT_DEPLOYMENT_ID" ]]; then
+            echo "::error::Missing GitHub Actions secret APPS_SCRIPT_DEPLOYMENT_ID"
+            exit 1
+          fi
+
+      - name: Configure clasp
+        shell: bash
+        env:
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$CLASP_JSON" > .clasp.json
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+      - name: Show files to push
+        run: clasp show-file-status
+
+      - name: Push Apps Script source
+        run: clasp push --force
+
+      - name: Redeploy existing Web App
+        shell: bash
+        env:
+          APPS_SCRIPT_DEPLOYMENT_ID: ${{ secrets.APPS_SCRIPT_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+
+          DESCRIPTION="GitHub ${GITHUB_SHA:0:7} - ${GITHUB_REF_NAME}"
+
+          clasp create-deployment \
+            --deploymentId "$APPS_SCRIPT_DEPLOYMENT_ID" \
+            --description "$DESCRIPTION"
+
+      - name: Show deployments
+        run: clasp list-deployments
