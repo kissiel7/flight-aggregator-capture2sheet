@@ -633,3 +633,34 @@ All results uploaded
 
 The panel no longer has a fixed 300 px width. It shrink-wraps its content, with the non-wrapping `Status` and `Backend` lines acting as the main width anchors, while still respecting the available viewport width.
 
+
+
+### Parser helper regression fix (Tampermonkey 1.6.11)
+
+A regression introduced while changing localized result-card discovery removed several parser helper functions from the userscript. The symptom was:
+
+```text
+Cards detected: > 0
+Status: Waiting for Skyscanner results
+INS / UPD / REJ: 0 / 0 / 0
+```
+
+The cards were found, but extraction failed before any result could be added to the discovered-result set.
+
+Version 1.6.11 restores the full parser helper set, including price, time, duration, stop, airport, total-price, leg, and key extraction.
+
+It also makes parser exceptions explicit: instead of remaining indefinitely in Loading, the collector shows `Parser error` and the concrete error text.
+
+Backend health labels were shortened for the compact panel:
+
+```text
+Not tested
+Testing
+OK
+Config error
+Server error
+Invalid response
+Network error
+Timeout
+```
+
