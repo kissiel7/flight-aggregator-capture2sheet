@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.8
+// @version      1.6.9
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.8',
+    scriptVersion: '1.6.9',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -697,7 +697,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.8',
+        version: '1.6.9',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -927,7 +927,7 @@
       <div><b>Status:</b> ${escapeHtml(state.lastStatus)}</div>
       <div><b>Version:</b> ${escapeHtml(CONFIG.scriptVersion)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
-      <div><b>Inserted / updated / filtered:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
+      <div><b>INS / UPD / REJ:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
       <div><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
       ${errorLine}
       ${overrideButton}
@@ -1032,6 +1032,11 @@
 
       state.discovered.clear();
       state.sentSnapshot.clear();
+      state.totalServerInserted = 0;
+      state.totalServerUpdated = 0;
+      state.totalServerFiltered = 0;
+      state.lastCandidateCount = 0;
+      state.lastPendingCount = 0;
       state.lastResultChangeAt = Date.now();
       state.lastSuccessfulSendAt = 0;
       state.pageCompleted = false;
