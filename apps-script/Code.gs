@@ -30,38 +30,40 @@ const SCHEMA = [
   { header: 'Org', field: 'origin' },
   { header: 'Dst', field: 'destination' },
 
-  { header: 'Out_DayTimeD', field: 'out_departure_dt' },
-  { header: 'Out_DayTimeL', field: 'out_arrival_dt' },
-  { header: 'Out_Dur', field: 'out_duration' },
-  { header: 'Out_Stop', field: 'out_stops' },
-  { header: 'Out_Airlines', field: 'out_airlines' },
-  { header: 'Out_Self_T', field: 'out_self_transfer' },
+  { header: 'ODeparture', field: 'out_departure_dt' },
+  { header: 'OArrival', field: 'out_arrival_dt' },
+  { header: 'ODuration', field: 'out_duration' },
+  { header: 'OSt', field: 'out_stops' },
+  { header: 'OStops', field: 'out_stop_airports' },
+  { header: 'OAirlines', field: 'out_airlines' },
+  { header: 'OSelf Tr', field: 'out_self_transfer' },
 
-  { header: 'In_DayTimeD', field: 'in_departure_dt' },
-  { header: 'In_DayTimeL', field: 'in_arrival_dt' },
-  { header: 'In_Dur', field: 'in_duration' },
-  { header: 'In_Stop', field: 'in_stops' },
-  { header: 'In_Airlines', field: 'in_airlines' },
-  { header: 'In_Self_T', field: 'in_self_transfer' },
+  { header: 'IDeparture', field: 'in_departure_dt' },
+  { header: 'IArrival', field: 'in_arrival_dt' },
+  { header: 'IDuration', field: 'in_duration' },
+  { header: 'ISt', field: 'in_stops' },
+  { header: 'IStops', field: 'in_stop_airports' },
+  { header: 'IAirlines', field: 'in_airlines' },
+  { header: 'ISelf Tr', field: 'in_self_transfer' },
 
-  { header: 'Price_PP', field: 'price' },
-  { header: 'Price_Total', field: 'total_price' },
+  { header: 'Price PP', field: 'price' },
+  { header: 'Price Total', field: 'total_price' },
   { header: 'Curr', field: 'currency' },
   { header: 'AD', field: 'adults' },
   { header: 'CH', field: 'children' },
   { header: 'cabin', field: 'cabin' },
 
-  { header: 'Search_URL', field: 'search_url' },
-  { header: 'source', field: 'source' },
-  { header: 'first_seen', field: 'first_seen' },
-  { header: 'last_seen', field: 'last_seen' },
-  { header: 'seen_count', field: 'seen_count' },
-  { header: 'captured_at_client', field: 'captured_at_client' },
-  { header: 'price_text', field: 'price_text' },
-  { header: 'dedupe_key', field: 'dedupe_key' },
-  { header: 'itinerary_key', field: 'itinerary_key' },
-  { header: 'config_url', field: 'config_url' },
-  { header: 'raw_text', field: 'raw_text' }
+  { header: 'Search URL', field: 'search_url' },
+  { header: 'Source', field: 'source' },
+  { header: 'First seen', field: 'first_seen' },
+  { header: 'Last seen', field: 'last_seen' },
+  { header: 'Seen\nCount', field: 'seen_count' },
+  { header: 'Captured at client', field: 'captured_at_client' },
+  { header: 'Price text', field: 'price_text' },
+  { header: 'Dedupe key', field: 'dedupe_key' },
+  { header: 'Itineriary key', field: 'itinerary_key' },
+  { header: 'Config URL', field: 'config_url' },
+  { header: 'Raw text', field: 'raw_text' }
 ];
 
 const HEADERS = SCHEMA.map(column => column.header);
@@ -169,10 +171,10 @@ function doPost(e) {
         .getValues();
     }
 
-    const keyColumn = HEADERS.indexOf('dedupe_key');
-    const firstSeenColumn = HEADERS.indexOf('first_seen');
-    const lastSeenColumn = HEADERS.indexOf('last_seen');
-    const seenCountColumn = HEADERS.indexOf('seen_count');
+    const keyColumn = fieldIndex_('dedupe_key');
+    const firstSeenColumn = fieldIndex_('first_seen');
+    const lastSeenColumn = fieldIndex_('last_seen');
+    const seenCountColumn = fieldIndex_('seen_count');
 
     const existingMap = new Map();
 
@@ -300,15 +302,25 @@ function getSpreadsheetByExactName_() {
   return SpreadsheetApp.open(matches[0]);
 }
 
+function fieldIndex_(field) {
+  const index = SCHEMA.findIndex(column => column.field === field);
+
+  if (index < 0) {
+    throw new Error('Schema field not found: ' + field);
+  }
+
+  return index;
+}
+
 function resultToRow_(result) {
   return SCHEMA.map(column => {
     const header = column.header;
     const field = column.field;
 
     if (
-      header === 'first_seen' ||
-      header === 'last_seen' ||
-      header === 'seen_count'
+      field === 'first_seen' ||
+      field === 'last_seen' ||
+      field === 'seen_count'
     ) {
       return '';
     }
@@ -729,24 +741,26 @@ function formatSheet_(sheet) {
   const textColumns = [
     'Org',
     'Dst',
-    'Out_DayTimeD',
-    'Out_DayTimeL',
-    'Out_Dur',
-    'Out_Airlines',
-    'In_DayTimeD',
-    'In_DayTimeL',
-    'In_Dur',
-    'In_Airlines',
+    'ODeparture',
+    'OArrival',
+    'ODuration',
+    'OStops',
+    'OAirlines',
+    'IDeparture',
+    'IArrival',
+    'IDuration',
+    'IStops',
+    'IAirlines',
     'Curr',
     'cabin',
-    'Search_URL',
-    'source',
-    'captured_at_client',
-    'price_text',
-    'dedupe_key',
-    'itinerary_key',
-    'config_url',
-    'raw_text'
+    'Search URL',
+    'Source',
+    'Captured at client',
+    'Price text',
+    'Dedupe key',
+    'Itineriary key',
+    'Config URL',
+    'Raw text'
   ];
 
   textColumns.forEach(name => {
@@ -755,58 +769,60 @@ function formatSheet_(sheet) {
       .setNumberFormat('@');
   });
 
-  for (const name of ['Price_PP', 'Price_Total']) {
+  for (const name of ['Price PP', 'Price Total']) {
     sheet
       .getRange(2, column(name), dataRowCount, 1)
       .setNumberFormat('#,##0.00');
   }
 
-  for (const name of ['Out_Stop', 'In_Stop', 'AD', 'CH', 'seen_count']) {
+  for (const name of ['OSt', 'ISt', 'AD', 'CH', 'Seen\nCount']) {
     sheet
       .getRange(2, column(name), dataRowCount, 1)
       .setNumberFormat('0');
   }
 
   sheet
-    .getRange(2, column('first_seen'), dataRowCount, 1)
+    .getRange(2, column('First seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
   sheet
-    .getRange(2, column('last_seen'), dataRowCount, 1)
+    .getRange(2, column('Last seen'), dataRowCount, 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
   const widths = {
     Org: 55,
     Dst: 55,
-    Out_DayTimeD: 118,
-    Out_DayTimeL: 118,
-    Out_Dur: 68,
-    Out_Stop: 50,
-    Out_Airlines: 120,
-    Out_Self_T: 58,
-    In_DayTimeD: 118,
-    In_DayTimeL: 118,
-    In_Dur: 68,
-    In_Stop: 50,
-    In_Airlines: 120,
-    In_Self_T: 58,
-    Price_PP: 76,
-    Price_Total: 86,
+    ODeparture: 118,
+    OArrival: 118,
+    ODuration: 68,
+    OSt: 42,
+    OStops: 72,
+    OAirlines: 120,
+    'OSelf Tr': 58,
+    IDeparture: 118,
+    IArrival: 118,
+    IDuration: 68,
+    ISt: 42,
+    IStops: 72,
+    IAirlines: 120,
+    'ISelf Tr': 58,
+    'Price PP': 76,
+    'Price Total': 86,
     Curr: 52,
     AD: 38,
     CH: 38,
     cabin: 68,
-    Search_URL: 180,
-    source: 75,
-    first_seen: 125,
-    last_seen: 125,
-    seen_count: 68,
-    captured_at_client: 145,
-    price_text: 82,
-    dedupe_key: 210,
-    itinerary_key: 185,
-    config_url: 180,
-    raw_text: 320
+    'Search URL': 180,
+    Source: 75,
+    'First seen': 125,
+    'Last seen': 125,
+    'Seen\nCount': 68,
+    'Captured at client': 145,
+    'Price text': 82,
+    'Dedupe key': 210,
+    'Itineriary key': 185,
+    'Config URL': 180,
+    'Raw text': 320
   };
 
   Object.entries(widths).forEach(([name, width]) => {
