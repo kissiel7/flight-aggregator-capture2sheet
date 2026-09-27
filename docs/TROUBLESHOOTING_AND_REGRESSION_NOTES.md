@@ -8,6 +8,7 @@ Current implementation reviewed against `main`:
 
 - Tampermonkey collector: **v1.6.19**
 - Apps Script backend: `apps-script/Code.gs`
+- Apps Script backend version: **1.0.0**
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
 - Configuration/reference tab: `Guide & Filters`
@@ -72,6 +73,13 @@ Responsible for:
 Do not move critical data-integrity logic into spreadsheet formulas.
 
 ---
+
+
+### Backend versioning
+
+The Apps Script backend has an independent semantic version in `CONFIG.APP_VERSION`.
+
+Whenever backend behavior changes materially, increment that version and expose it through the health-check and POST responses. This makes it possible to distinguish a stale deployed Web App from the current GitHub source during troubleshooting.
 
 ## 2. Current invariants
 
