@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.15**
+- Tampermonkey collector: **v1.6.16**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -949,6 +949,37 @@ REJ: Price: 3 | Stops: 1
 Status counters shown as "per current page" must be unique by dedupe key, not cumulative backend-event totals.
 
 Backend filter diagnostics should preserve reason codes so that the UI can distinguish legitimate filter rejection from parser failure.
+
+
+## 5.24 Configuration error was visually presented as collection activity
+
+**Symptom**
+
+When `WEB_APP_URL` or `API_KEY` was missing, the small status and backend line reported a configuration problem, but the large/bold state could still show `Collecting`.
+
+That was misleading because no upload could succeed until configuration was fixed.
+
+**Fix**
+
+Tampermonkey 1.6.16 gives configuration errors precedence in the main state. Missing `WEB_APP_URL` or `API_KEY` now produces:
+
+```text
+Config error
+Status: Configure WEB_APP_URL
+```
+
+or:
+
+```text
+Config error
+Status: Configure API_KEY
+```
+
+with the red error indicator.
+
+**Permanent rule**
+
+The primary status must describe the highest-priority blocking condition, not merely the current parser/activity state. Configuration failures outrank Loading, Collecting and Sending.
 
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
