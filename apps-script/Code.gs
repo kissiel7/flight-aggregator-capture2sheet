@@ -6,6 +6,7 @@
  */
 
 const CONFIG = {
+  APP_VERSION: '1.0.0',
   SPREADSHEET_NAME: 'Flight Aggregator Capture',
   SHEET_NAME: 'Results',
   FILTER_SHEET_NAME: 'Guide & Filters',
@@ -88,6 +89,7 @@ function setupSkyscannerCollector() {
   console.log('');
   console.log('================================================');
   console.log('Flight Aggregator Capture configured');
+  console.log('Backend version: ' + CONFIG.APP_VERSION);
   console.log('================================================');
   console.log('Spreadsheet:');
   console.log(spreadsheet.getName());
@@ -100,6 +102,7 @@ function setupSkyscannerCollector() {
 
   return {
     ok: true,
+    version: CONFIG.APP_VERSION,
     spreadsheetName: spreadsheet.getName(),
     sheetName: CONFIG.SHEET_NAME,
     apiKey
@@ -113,6 +116,7 @@ function doGet() {
     return jsonResponse_({
       ok: true,
       service: 'flight-aggregator-skyscanner-collector',
+      version: CONFIG.APP_VERSION,
       spreadsheet: spreadsheet.getName(),
       sheet: CONFIG.SHEET_NAME
     });
@@ -144,7 +148,8 @@ function doPost(e) {
         uniqueReceived: 0,
         inserted: 0,
         updated: 0,
-        filtered: 0
+        filtered: 0,
+        version: CONFIG.APP_VERSION
       });
     }
 
@@ -297,6 +302,7 @@ function doPost(e) {
       ok: true,
       spreadsheet: spreadsheet.getName(),
       sheet: CONFIG.SHEET_NAME,
+      version: CONFIG.APP_VERSION,
       received: payload.results.length,
       uniqueReceived: incoming.length,
       inserted: newRows.length,
@@ -1010,6 +1016,10 @@ function buildRawCaptureBlock_(
   lines.push(
     'Collector: ' +
     String(client.version || 'unknown')
+  );
+  lines.push(
+    'Backend: ' +
+    CONFIG.APP_VERSION
   );
   lines.push(
     'Page: ' +
