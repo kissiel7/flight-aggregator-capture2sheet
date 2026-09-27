@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.12
+// @version      1.6.13
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.12',
+    scriptVersion: '1.6.13',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -357,9 +357,54 @@
   function extractPrice(text) {
     const normalized = normalizeWhitespace(text);
 
-    const patterns = [
+    /*
+     * Prefer an explicitly labelled per-passenger price.
+     *
+     * This is essential for searches with multiple travellers because
+     * Skyscanner often renders both values in the same card, for example:
+     *
+     *   373 € pro Passagier. Gesamtpreis 1.119 €
+     *
+     * A generic first-currency match can otherwise mistake the total for
+     * Price PP and cause valid results to be rejected by Max PP price.
+     */
+    const perPassengerPatterns = [
       {
-        regex: /(?:Total cost|Price)[^\d€$£]*([€$£])\s*([\d.,\s]+)/i,
+        regex: /([\d][\d.,\s]*)\s*(EUR|USD|GBP|PLN|CHF|zł|€|\$|£)\s*(?:pro\s+(?:Passagier|Person)|per\s+(?:passenger|person|travell?er))/i,
+        symbolFirst: false
+      },
+      {
+        regex: /(?:pro\s+(?:Passagier|Person)|per\s+(?:passenger|person|travell?er))\s*[:\-]?\s*([€$£])\s*([\d][\d.,\s]*)/i,
+        symbolFirst: true
+      },
+      {
+        regex: /(?:Price\s+per\s+(?:passenger|person|travell?er))[^\d€$£]*([€$£])\s*([\d.,\s]+)/i,
+        symbolFirst: true
+      }
+    ];
+
+    for (const pattern of perPassengerPatterns) {
+      const match = normalized.match(pattern.regex);
+      if (!match) continue;
+
+      const currencyToken = pattern.symbolFirst ? match[1] : match[2];
+      const numberToken = pattern.symbolFirst ? match[2] : match[1];
+
+      return {
+        price: parseLocalizedNumber(numberToken),
+        currency: normalizeCurrency(currencyToken),
+        price_text: normalizeWhitespace(match[0])
+      };
+    }
+
+    /*
+     * Fallback for cards/searches where Skyscanner exposes only one
+     * visible quote value. Do not explicitly target Gesamtpreis /
+     * Total cost here; those labels belong to extractTotalPrice().
+     */
+    const fallbackPatterns = [
+      {
+        regex: /(?:Price)[^\d€$£]*([€$£])\s*([\d.,\s]+)/i,
         symbolFirst: true
       },
       {
@@ -376,7 +421,7 @@
       }
     ];
 
-    for (const pattern of patterns) {
+    for (const pattern of fallbackPatterns) {
       const match = normalized.match(pattern.regex);
       if (!match) continue;
 
@@ -1321,7 +1366,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.12',
+        version: '1.6.13',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
