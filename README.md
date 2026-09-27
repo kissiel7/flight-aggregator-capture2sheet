@@ -22,7 +22,7 @@ Google Apps Script Web App
 Google Sheet: "Flight Aggregator Capture"
         |
         v
-Tab: "Skyscanner Results"
+Tab: "Results"
 ```
 
 ## Repository layout
@@ -97,7 +97,7 @@ The shared secret is stored in Apps Script Script Properties and copied locally 
 7. Run `setupSkyscannerCollector()`.
 8. Copy the generated API key from the execution log.
 
-The setup function creates the `Skyscanner Results` tab if required and writes the expected header row.
+The setup function creates the `Results` tab if required and writes the expected header row.
 
 ## Deploy Apps Script as a Web App
 
@@ -189,7 +189,7 @@ Controls:
 - **Backend = OK, Cards detected = 0**: browser-to-Google connectivity works; Skyscanner DOM selectors need adjustment.
 - **Cards detected > 0, Results extracted = 0**: candidate cards are found, but extraction logic rejects them.
 - **Pending > 0, HTTP blank**: results exist but no POST completed yet.
-- **HTTP 200 + Saved**: Apps Script accepted the batch; inspect `Skyscanner Results`.
+- **HTTP 200 + Saved**: Apps Script accepted the batch; inspect `Results`.
 - **Backend error / Network error / Timeout**: troubleshoot deployment URL, Web App permissions, Tampermonkey `@connect`, or Apps Script deployment.
 
 
@@ -347,7 +347,7 @@ The current implementation uses separate `Out_*` and `In_*` fields, combined ISO
 
 ## Current compact result schema
 
-The live `Skyscanner Results` tab uses the human-friendly display headers below:
+The live `Results` tab uses the human-friendly display headers below:
 
 ```text
 Org
@@ -458,7 +458,7 @@ Once the current Skyscanner URL has reached the green **Complete — safe to lea
 
 ## Server-side result filters
 
-The Google Apps Script backend supports optional filters from the `Guide & Filters` tab. Filters are applied **at spreadsheet injection time**, so Tampermonkey can still capture all rendered Skyscanner results while the backend decides which new itineraries are allowed into `Skyscanner Results`.
+The Google Apps Script backend supports optional filters from the `Guide & Filters` tab. Filters are applied **at spreadsheet injection time**, so Tampermonkey can still capture all rendered Skyscanner results while the backend decides which new itineraries are allowed into `Results`.
 
 The `Guide & Filters` tab uses column A for the filter name and column B for the value:
 
@@ -482,7 +482,7 @@ Semantics:
 - `Self transfer = TRUE` or `ALLOW`: self-transfer itineraries are permitted.
 - `Self transfer = FALSE` or `EXCLUDE`: new itineraries with self-transfer on either leg are rejected.
 
-Filters apply only to **new rows**. If an itinerary already exists in `Skyscanner Results`, it can still be updated even if its latest observation is outside the current filter limits. Existing rows are never deleted by this filter mechanism.
+Filters apply only to **new rows**. If an itinerary already exists in `Results`, it can still be updated even if its latest observation is outside the current filter limits. Existing rows are never deleted by this filter mechanism.
 
 If an active numeric filter is configured but the corresponding extracted value is missing, the new result is rejected rather than silently admitted. This is intentionally fail-closed.
 
@@ -548,7 +548,7 @@ It combines three purposes in one human-readable reference page:
 
 - editable server-side capture filters;
 - a short explanation of the capture/filter/store workflow;
-- a legend for the columns used in `Skyscanner Results`.
+- a legend for the columns used in `Results`.
 
 The filter input cells are highlighted in the Value column. Blank filter values disable that filter. Existing result rows are never deleted by these filters.
 
