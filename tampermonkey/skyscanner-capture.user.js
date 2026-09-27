@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.15
+// @version      1.6.16
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.15',
+    scriptVersion: '1.6.16',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -1121,6 +1121,19 @@
   }
 
   function getReadyVisual() {
+    const configurationError =
+      state.backendHealth === 'Config error' ||
+      state.lastStatus === 'Configure WEB_APP_URL' ||
+      state.lastStatus === 'Configure API_KEY';
+
+    if (configurationError) {
+      return {
+        color: '#d93025',
+        symbol: '●',
+        label: 'Config error'
+      };
+    }
+
     if (state.lastError) {
       return {
         color: '#d93025',
@@ -1408,6 +1421,7 @@
     }
 
     if (!WEB_APP_URL || WEB_APP_URL.includes('PASTE_')) {
+      state.backendHealth = 'Config error';
       state.lastStatus = 'Configure WEB_APP_URL';
       updateBadge();
       console.error('[Skyscanner -> Sheets] WEB_APP_URL not configured.');
@@ -1415,6 +1429,7 @@
     }
 
     if (!API_KEY || API_KEY.includes('PASTE_')) {
+      state.backendHealth = 'Config error';
       state.lastStatus = 'Configure API_KEY';
       updateBadge();
       console.error('[Skyscanner -> Sheets] API_KEY not configured.');
@@ -1433,7 +1448,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.15',
+        version: '1.6.16',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1711,6 +1726,13 @@
     if (!WEB_APP_URL || WEB_APP_URL.includes('PASTE_')) {
       state.backendHealth = 'Config error';
       state.lastStatus = 'Configure WEB_APP_URL';
+      updateBadge();
+      return;
+    }
+
+    if (!API_KEY || API_KEY.includes('PASTE_')) {
+      state.backendHealth = 'Config error';
+      state.lastStatus = 'Configure API_KEY';
       updateBadge();
       return;
     }
