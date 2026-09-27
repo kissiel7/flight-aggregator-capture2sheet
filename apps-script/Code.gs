@@ -191,6 +191,7 @@ function doPost(e) {
     const serverNow = new Date();
     const newRows = [];
     const updates = [];
+    const outcomes = [];
     let filtered = 0;
     const filteredByReason = {};
 
@@ -209,6 +210,11 @@ function doPost(e) {
           rowNumber: existing.rowNumber,
           values: row
         });
+
+        outcomes.push({
+          dedupe_key: key,
+          status: 'updated'
+        });
       } else {
         const filterDecision = matchesFilters_(result, filters);
 
@@ -217,6 +223,13 @@ function doPost(e) {
           const reason = filterDecision.reason || 'filtered';
           filteredByReason[reason] =
             (filteredByReason[reason] || 0) + 1;
+
+          outcomes.push({
+            dedupe_key: key,
+            status: 'rejected',
+            reason
+          });
+
           return;
         }
 
@@ -224,6 +237,11 @@ function doPost(e) {
         row[lastSeenColumn] = serverNow;
         row[seenCountColumn] = 1;
         newRows.push(row);
+
+        outcomes.push({
+          dedupe_key: key,
+          status: 'inserted'
+        });
       }
     });
 
@@ -253,6 +271,7 @@ function doPost(e) {
       updated: updates.length,
       filtered,
       filteredByReason,
+      outcomes,
       activeFilters: filters.active
     });
   } catch (error) {
