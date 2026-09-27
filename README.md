@@ -690,3 +690,38 @@ Before changing parser, schema, readiness, filter, or UI-lock logic, review:
 [`docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md`](docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md)
 
 That document contains the bug/fix ledger, current invariants, symptom-to-diagnostic table, mandatory smoke tests, and known limitations discovered during development.
+
+
+## Raw capture diagnostics
+
+The backend keeps an append-only diagnostic text log next to the `Flight Aggregator Capture` spreadsheet in the same Google Drive folder.
+
+Files rotate monthly:
+
+```text
+Flight Aggregator Capture - Raw 2026-09.txt
+Flight Aggregator Capture - Raw 2026-10.txt
+...
+```
+
+No extra browser request is used. The normal Apps Script POST is classified first, then the same received data is appended to the monthly raw log.
+
+Each logged batch includes:
+
+- server timestamp;
+- page-level capture session ID;
+- collector version;
+- Skyscanner page URL;
+- active filter values;
+- one block per received dedupe key;
+- backend outcome: `INSERTED`, `UPDATED`, or `REJECTED`;
+- rejection reason when applicable;
+- parsed structured fields;
+- exact captured `raw_text`.
+
+The file is logically append-only: existing diagnostic entries are never edited or removed by the collector. Because Google Drive text files do not expose an Apps Script append primitive, the implementation reads the current monthly file and writes back `existing content + new block`. Monthly rotation keeps that operation bounded.
+
+Raw-log failures are deliberately non-fatal. If the spreadsheet write succeeds but the diagnostic file cannot be updated, the normal capture request still succeeds and the backend records the raw-log error in its response/logs.
+
+Tampermonkey assigns a new `capture_session_id` on full page load and whenever the Skyscanner search URL changes. Multiple backend batches from the same search can therefore be correlated in the text log.
+
