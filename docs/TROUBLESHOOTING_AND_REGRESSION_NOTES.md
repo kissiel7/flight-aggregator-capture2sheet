@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.17**
+- Tampermonkey collector: **v1.6.18**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -1023,6 +1023,59 @@ Tampermonkey 1.6.17 accepts both forms by allowing optional whitespace for stop-
 **Permanent rule**
 
 Do not assume visual spacing is preserved in `innerText`/accessibility text. Parsers for compact card labels should tolerate DOM-concatenated tokens where the semantic boundary is still unambiguous.
+
+
+## 5.26 Round-trip cards needed route-aware leg splitting
+
+**Symptom**
+
+Round-trip cards visibly showed valid stop information on both legs, but all new results could still be rejected as:
+
+```text
+REJ: Stops?: N
+```
+
+Example rendered card:
+
+```text
+06:35 BER 27 Std. 05 Min. 1Zwischenstopp IST 12:40+1 MRU
+08:00 MRU 16 Std. 50 Min. 1Zwischenstopp IST 21:50 BER
+```
+
+**Root cause**
+
+The original round-trip splitter relied mainly on verbose phrases such as:
+
+```text
+Abflug ab
+Departing from
+```
+
+Some Skyscanner round-trip cards expose two compact route rows without two clean verbose leg descriptions. In that case outbound/inbound leg boundaries could be wrong or incomplete, causing stop extraction to fail.
+
+**Fix**
+
+Tampermonkey 1.6.18 first attempts route-aware compact leg extraction using the search route:
+
+```text
+origin -> destination
+destination -> origin
+```
+
+It extracts each compact row independently and only falls back to verbose-marker splitting if the route-aware form is not available.
+
+Rejection diagnostics also distinguish:
+
+```text
+OStops / OStops?
+IStops / IStops?
+```
+
+instead of merging both legs into a generic `Stops?`.
+
+**Permanent rule**
+
+Round-trip parsing must be validated against real two-row compact cards. Do not assume accessibility text contains two complete verbose leg descriptions.
 
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
