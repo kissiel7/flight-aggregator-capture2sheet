@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.17
+// @version      1.6.18
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.17',
+    scriptVersion: '1.6.18',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -759,7 +759,64 @@
     return addDaysIso(departureDate, offset);
   }
 
-  function findLegBlocks(text) {
+  function escapeRegex(value) {
+    return String(value || '').replace(
+      /[.*+?^$\{\}()|[\]\\]/g,
+      '\\$&'
+    );
+  }
+
+  function findCompactRouteBlock(text, origin, destination) {
+    const from = escapeRegex(origin);
+    const to = escapeRegex(destination);
+
+    if (!from || !to) return '';
+
+    const regex = new RegExp(
+      '\\b([0-2]?\\d:[0-5]\\d)\\s*' +
+      from +
+      '\\b([\\s\\S]{0,500}?)' +
+      '\\b([0-2]?\\d:[0-5]\\d)' +
+      '(?:\\s*\\+\\s*\\d+)?\\s*' +
+      to +
+      '\\b',
+      'i'
+    );
+
+    const match = text.match(regex);
+
+    return match
+      ? normalizeWhitespace(match[0])
+      : '';
+  }
+
+  function findLegBlocks(text, search = {}) {
+    /*
+     * Prefer route-aware compact leg extraction for round trips.
+     * Example rendered rows:
+     * 06:35 BER 27 Std. 05 Min. 1Zwischenstopp IST 12:40+1 MRU
+     * 08:00 MRU 16 Std. 50 Min. 1Zwischenstopp IST 21:50 BER
+     */
+    if (search.origin && search.destination) {
+      const outbound = findCompactRouteBlock(
+        text,
+        search.origin,
+        search.destination
+      );
+
+      const inbound = search.inbound_date
+        ? findCompactRouteBlock(
+            text,
+            search.destination,
+            search.origin
+          )
+        : '';
+
+      if (outbound && (!search.inbound_date || inbound)) {
+        return inbound ? [outbound, inbound] : [outbound];
+      }
+    }
+
     const markers = [];
     const regex = /(?:Abflug ab|Departing from)/gi;
     let match;
@@ -943,7 +1000,7 @@
     const price = extractPrice(rawText);
     const totalPrice = extractTotalPrice(rawText);
 
-    const legBlocks = findLegBlocks(rawText);
+    const legBlocks = findLegBlocks(rawText, search);
 
     const outLeg = extractLeg(
       legBlocks[0] || rawText,
@@ -1367,10 +1424,10 @@
 
   function formatRejectReasons() {
     const labels = {
-      outbound_stops: 'Stops',
-      inbound_stops: 'Stops',
-      outbound_stops_missing: 'Stops?',
-      inbound_stops_missing: 'Stops?',
+      outbound_stops: 'OStops',
+      inbound_stops: 'IStops',
+      outbound_stops_missing: 'OStops?',
+      inbound_stops_missing: 'IStops?',
       price_pp: 'Price',
       price_pp_missing: 'Price?',
       price_total: 'Total',
@@ -1448,7 +1505,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.17',
+        version: '1.6.18',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
