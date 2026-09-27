@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.14**
+- Tampermonkey collector: **v1.6.15**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -901,6 +901,54 @@ Tampermonkey 1.6.14 now treats visible rendered card text as the base source and
 Accessibility text is supplemental evidence, not a replacement for rendered card text.
 
 When filter-critical fields are extracted from the page, the parser must preserve all available rendered content before applying filters.
+
+
+## 5.23 REJ counter was cumulative across repeated backend observations
+
+**Symptom**
+
+The collector could show more rejected results than the number of distinct currently visible/detected itineraries, for example:
+
+```text
+Cards detected: 11
+INS / UPD / REJ: 2 / 12 / 8
+```
+
+even though only a few unique itineraries on the current page actually violated the active filters.
+
+**Root cause**
+
+`INS / UPD / REJ` were accumulated from every backend response. If a result was re-observed later on the same search page, the same dedupe key could contribute to the counters again.
+
+This made the counters event-based rather than unique-result-based.
+
+**Fix**
+
+Apps Script now returns one per-result outcome:
+
+```text
+inserted
+updated
+rejected + reason
+```
+
+identified by `dedupe_key`.
+
+Tampermonkey 1.6.15 stores the latest outcome per dedupe key for the current search page and derives `INS / UPD / REJ` from that unique-key map.
+
+The map resets on Skyscanner URL changes and naturally resets on a full page reload.
+
+The panel also shows a compact rejection-reason summary when rejections exist, for example:
+
+```text
+REJ: Price: 3 | Stops: 1
+```
+
+**Permanent rule**
+
+Status counters shown as "per current page" must be unique by dedupe key, not cumulative backend-event totals.
+
+Backend filter diagnostics should preserve reason codes so that the UI can distinguish legitimate filter rejection from parser failure.
 
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
