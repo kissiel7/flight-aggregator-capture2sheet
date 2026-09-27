@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.16**
+- Tampermonkey collector: **v1.6.17**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -980,6 +980,49 @@ with the red error indicator.
 **Permanent rule**
 
 The primary status must describe the highest-priority blocking condition, not merely the current parser/activity state. Configuration failures outrank Loading, Collecting and Sending.
+
+
+## 5.25 Stop label without whitespace caused false "Stops?" rejections
+
+**Symptom**
+
+Round-trip cards visibly showed one stop on each leg, for example:
+
+```text
+1Zwischenstopp IST
+```
+
+but the collector reported:
+
+```text
+REJ: Stops?: N
+```
+
+even though the configured maximum was one stop.
+
+**Root cause**
+
+Some Skyscanner layouts concatenate the stop count and label in DOM text:
+
+```text
+1Zwischenstopp
+```
+
+instead of:
+
+```text
+1 Zwischenstopp
+```
+
+The parser required at least one whitespace character between the number and `Zwischenstopp`, so stop count and stop airport extraction could fail.
+
+**Fix**
+
+Tampermonkey 1.6.17 accepts both forms by allowing optional whitespace for stop-count and stop-airport parsing.
+
+**Permanent rule**
+
+Do not assume visual spacing is preserved in `innerText`/accessibility text. Parsers for compact card labels should tolerate DOM-concatenated tokens where the semantic boundary is still unambiguous.
 
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
