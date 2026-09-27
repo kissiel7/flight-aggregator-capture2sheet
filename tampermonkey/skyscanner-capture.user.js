@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.13
+// @version      1.6.14
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.13',
+    scriptVersion: '1.6.14',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -277,6 +277,10 @@
   }
 
   function getResultText(element) {
+    const visibleText = normalizeWhitespace(
+      element.innerText || element.textContent || ''
+    );
+
     const accessibilityLabels = [];
 
     const isRelevantAccessibilityLabel = label =>
@@ -288,7 +292,7 @@
       const own = element.getAttribute('aria-label');
 
       if (own && isRelevantAccessibilityLabel(own)) {
-        accessibilityLabels.push(own);
+        accessibilityLabels.push(normalizeWhitespace(own));
       }
     }
 
@@ -296,17 +300,25 @@
       const label = node.getAttribute('aria-label');
 
       if (label && isRelevantAccessibilityLabel(label)) {
-        accessibilityLabels.push(label);
+        accessibilityLabels.push(normalizeWhitespace(label));
       }
     });
 
-    if (accessibilityLabels.length) {
-      return normalizeWhitespace(accessibilityLabels.join(' '));
+    const parts = [];
+
+    if (visibleText) {
+      parts.push(visibleText);
     }
 
-    return normalizeWhitespace(
-      element.innerText || element.textContent || ''
-    );
+    for (const label of accessibilityLabels) {
+      if (!label) continue;
+
+      if (!visibleText.includes(label)) {
+        parts.push(label);
+      }
+    }
+
+    return normalizeWhitespace(parts.join(' '));
   }
 
   function normalizeCurrency(value) {
@@ -1366,7 +1378,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.13',
+        version: '1.6.14',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
