@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.11**
+- Tampermonkey collector: **v1.6.13**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -799,6 +799,72 @@ If a field is primarily kept to debug parsing or reproduce the source text, it s
 
 When adding a new payload field, decide explicitly whether that field belongs in the stable comparison snapshot.
 
+
+## 5.21 Per-passenger price was confused with total price
+
+**Symptom**
+
+With searches containing multiple travellers, valid new results could all be rejected by the `Max PP price` filter even though the visible per-passenger price was below the configured limit.
+
+Example Skyscanner text:
+
+```text
+373 € pro Passagier. Gesamtpreis 1.119 €
+```
+
+Expected:
+
+```text
+Price PP    = 373
+Price Total = 1119
+```
+
+**Root cause**
+
+The generic price parser could match a total-price amount before reliably identifying the explicitly labelled per-passenger amount.
+
+For a multi-traveller search this could produce:
+
+```text
+Price PP = 1119
+```
+
+which then caused the backend `Max PP price` filter to reject the new itinerary.
+
+**Fix**
+
+Tampermonkey 1.6.13 gives explicit per-passenger wording highest priority, including:
+
+```text
+pro Passagier
+pro Person
+per passenger
+per person
+per traveller / traveler
+Price per passenger
+```
+
+`Gesamtpreis` / `Gesamt` remain the responsibility of `extractTotalPrice()`.
+
+A regression sample is:
+
+```text
+373 € pro Passagier. Gesamtpreis 1.119 €
+```
+
+and must parse as:
+
+```text
+Price PP    = 373
+Price Total = 1119
+```
+
+**Permanent rule**
+
+When the same card contains both a unit price and an aggregate price, parser precedence must be based on semantic labels, not merely the first currency-looking number.
+
+Do not add `Gesamtpreis`, `Gesamt`, or `Total cost` to the generic per-passenger price patterns.
+
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
 Run this checklist before considering a userscript change complete.
@@ -852,6 +918,7 @@ Inspect at least one written row:
 - [ ] airline;
 - [ ] self-transfer boolean;
 - [ ] numeric `Price PP`;
+- [ ] on multi-traveller cards, `Price PP` comes from the explicit per-passenger value, not `Price Total`;
 - [ ] numeric `Price Total`;
 - [ ] numeric AD/CH;
 - [ ] correct dedupe and itinerary keys;
@@ -887,6 +954,7 @@ Inspect at least one written row:
 | Complete later becomes Loading | sticky-completion regression |
 | Stuck on `Sent — checking for more results` while backend is OK | check whether volatile fields entered the stable comparison snapshot |
 | Price sorts lexically instead of numerically | payload type coercion, not cell display format |
+| All new multi-traveller results are REJ despite low visible PP prices | verify per-passenger parsing is not using total price |
 | Destination is TENE instead of TFS/TFN | parser fell back to search-area code |
 | Stop count exists but OStops/IStops blank | stop-airport parsing regression |
 | Existing rows disappear after filter changes | backend filtering behavior is wrong; filters must not delete |
