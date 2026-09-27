@@ -35,7 +35,14 @@ tampermonkey/
   skyscanner-capture.user.js       Browser collector
 
 README.md                          Setup and operating documentation
+docs/
+  TROUBLESHOOTING_AND_REGRESSION_NOTES.md
+                                   Bug history, diagnostics, regression checklist
 ```
+
+For maintenance and future debugging, use
+[`docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md`](docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md)
+as the canonical record of known failure modes, root causes, fixes, and regression checks.
 
 ## Design decisions
 
@@ -94,7 +101,7 @@ The setup function creates the `Skyscanner Results` tab if required and writes t
 
 ## Deploy Apps Script as a Web App
 
-In Apps Script:
+For the **first deployment only**:
 
 1. **Deploy -> New deployment**
 2. Type: **Web app**
@@ -102,6 +109,16 @@ In Apps Script:
 4. Who has access: **Anyone**
 5. Deploy.
 6. Copy the deployed URL ending in `/exec`.
+
+For **routine backend updates**, preserve the existing endpoint:
+
+1. **Deploy -> Manage deployments**
+2. Select the existing Web App.
+3. **Edit**
+4. Select **New version**
+5. **Deploy**
+
+Do not create a new deployment for a routine code update; that can change the deployment ID and `/exec` URL.
 
 Use the deployed `/exec` URL, not the development `/dev` URL.
 
@@ -120,7 +137,7 @@ Opening the `/exec` URL in a browser should return a JSON health-check response.
 
 The script automatically observes dynamically rendered results and batches changed itineraries to Apps Script.
 
-A small status badge appears at the bottom-right of the page. Clicking it forces an immediate scan and send.
+A compact collector panel appears at the bottom-right of the page. During the initial capture cycle it temporarily blocks page interaction and offers a single `Use page anyway` override. Scanning and uploads continue automatically in the background.
 
 ## Google Sheet columns
 
@@ -664,3 +681,12 @@ Network error
 Timeout
 ```
 
+
+
+## Regression / troubleshooting reference
+
+Before changing parser, schema, readiness, filter, or UI-lock logic, review:
+
+[`docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md`](docs/TROUBLESHOOTING_AND_REGRESSION_NOTES.md)
+
+That document contains the bug/fix ledger, current invariants, symptom-to-diagnostic table, mandatory smoke tests, and known limitations discovered during development.
