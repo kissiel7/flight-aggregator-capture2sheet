@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.18**
+- Tampermonkey collector: **v1.6.19**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -1076,6 +1076,48 @@ instead of merging both legs into a generic `Stops?`.
 **Permanent rule**
 
 Round-trip parsing must be validated against real two-row compact cards. Do not assume accessibility text contains two complete verbose leg descriptions.
+
+
+## 5.27 Preserve pre-filter evidence outside the Results table
+
+**Problem**
+
+Rejected rows are intentionally absent from `Results`. That makes parser/filter regressions harder to diagnose because the most useful evidence can disappear precisely when a result is rejected.
+
+**Implementation**
+
+The Apps Script backend now writes a monthly text diagnostic file in the same Drive folder as the spreadsheet:
+
+```text
+Flight Aggregator Capture - Raw YYYY-MM.txt
+```
+
+The normal capture POST is reused; Tampermonkey does not make a separate logging request.
+
+Each backend observation records:
+
+```text
+capture session
+collector version
+page URL
+active filters
+dedupe key
+INSERTED / UPDATED / REJECTED
+rejection reason
+parsed structured result
+exact raw_text
+```
+
+Tampermonkey 1.6.19 creates a page-level `capture_session_id` and resets it when the Skyscanner URL changes.
+
+**Permanent rules**
+
+- Raw diagnostics must include rejected results, not only rows that reached `Results`.
+- Logging must be non-fatal: a raw-log failure must not undo a successful spreadsheet capture.
+- Do not log on every DOM scan. Log only data that reached the existing backend POST path.
+- Keep the log logically append-only.
+- Rotate monthly so Drive text-file rewrites remain reasonably bounded.
+- Keep `Raw text` in `Results` for now; remove it only after the external raw-log mechanism has proven reliable in normal use.
 
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
