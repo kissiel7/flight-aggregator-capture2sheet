@@ -739,6 +739,66 @@ Only create a new deployment when intentionally creating a new endpoint.
 
 ---
 
+
+## 5.20 Volatile diagnostic card text prevented readiness from settling
+
+**Symptom**
+
+The panel could remain indefinitely on:
+
+```text
+Sent — checking for more results
+```
+
+even though:
+
+- Backend was `OK`;
+- there were no meaningful visible changes;
+- the same page had already been uploaded.
+
+A related clue was `REJ` or `UPD` increasing beyond the number of currently rendered cards.
+
+**Root cause**
+
+The browser-side change detector compared almost the whole captured result object. That included diagnostic/presentation fields such as:
+
+- `raw_text`;
+- `price_text`.
+
+Skyscanner can change text that is not part of itinerary identity or the meaningful quote, for example:
+
+- offer counts;
+- sponsored wording;
+- accessibility text;
+- provider presentation text.
+
+Those changes made an already-sent result look new, which reset the stabilization timer and could trigger repeated backend observations.
+
+**Fix**
+
+Tampermonkey 1.6.12 uses one canonical `getStableResultSnapshot()` for both:
+
+- discovered-result change detection;
+- successful-send snapshots.
+
+The stable snapshot includes meaningful structured flight/quote fields such as route, dates/times, duration, stops, stop airports, airlines, self-transfer, passengers, cabin, numeric prices, currency and config identity.
+
+It deliberately excludes volatile diagnostic fields such as:
+
+```text
+captured_at_client
+raw_text
+price_text
+```
+
+**Permanent rule**
+
+Readiness and resend logic must compare semantic structured data, not diagnostic text.
+
+If a field is primarily kept to debug parsing or reproduce the source text, it should not by itself cause a resend.
+
+When adding a new payload field, decide explicitly whether that field belongs in the stable comparison snapshot.
+
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
 Run this checklist before considering a userscript change complete.
@@ -751,6 +811,7 @@ Run this checklist before considering a userscript change complete.
 - [ ] No real secrets are committed.
 - [ ] Result selectors do not depend on `/transport/flights/` or another locale-specific route word.
 - [ ] `captured_at_client` is excluded from stable resend comparison.
+- [ ] `raw_text` and `price_text` are excluded from stable resend comparison.
 - [ ] URL-change handler resets page-scoped state/counters and override.
 - [ ] Parser exceptions are caught and surfaced as `Parser error`.
 
@@ -824,6 +885,7 @@ Inspect at least one written row:
 | Repeated UPD and rapidly rising Seen Count | volatile field accidentally included in stable comparison |
 | Never reaches Complete after successful upload | readiness timer/state logic |
 | Complete later becomes Loading | sticky-completion regression |
+| Stuck on `Sent — checking for more results` while backend is OK | check whether volatile fields entered the stable comparison snapshot |
 | Price sorts lexically instead of numerically | payload type coercion, not cell display format |
 | Destination is TENE instead of TFS/TFN | parser fell back to search-area code |
 | Stop count exists but OStops/IStops blank | stop-airport parsing regression |
