@@ -725,3 +725,31 @@ Raw-log failures are deliberately non-fatal. If the spreadsheet write succeeds b
 
 Tampermonkey assigns a new `capture_session_id` on full page load and whenever the Skyscanner search URL changes. Multiple backend batches from the same search can therefore be correlated in the text log.
 
+
+
+## Apps Script backend version
+
+The Apps Script backend has its own explicit version, independent of the Tampermonkey collector version.
+
+Current backend version:
+
+```text
+1.0.0
+```
+
+It is defined in `apps-script/Code.gs` as:
+
+```javascript
+CONFIG.APP_VERSION
+```
+
+The backend version is included in:
+
+- the Web App GET health-check response;
+- normal POST responses;
+- empty-result POST responses;
+- raw capture log blocks;
+- `setupSkyscannerCollector()` console/return output.
+
+Increment this version whenever Apps Script backend behavior changes materially.
+
