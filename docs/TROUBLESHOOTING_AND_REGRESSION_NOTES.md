@@ -9,7 +9,7 @@ Current implementation reviewed against `main`:
 - Tampermonkey collector: **v1.6.11**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
-- Result tab: `Skyscanner Results`
+- Result tab: `Results`
 - Configuration/reference tab: `Guide & Filters`
 
 ---
@@ -661,7 +661,7 @@ Also verify the userscript version was updated consistently in:
 
 **Symptom**
 
-`Backend: OK: Flight Aggregator Capture / Skyscanner Results` dominated panel width.
+`Backend: OK: Flight Aggregator Capture / Results` dominated panel width.
 
 **Fix**
 
