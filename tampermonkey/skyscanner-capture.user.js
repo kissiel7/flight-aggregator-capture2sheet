@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.16
+// @version      1.6.17
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.16',
+    scriptVersion: '1.6.17',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -547,7 +547,7 @@
     }
 
     let match = text.match(
-      /Flug mit\s+(\d+)\s+Zwischenstopps?/i
+      /Flug mit\s+(\d+)\s*Zwischenstopps?/i
     );
 
     if (match) {
@@ -559,7 +559,7 @@
     }
 
     match = text.match(
-      /\b(\d+)\s+Zwischenstopps?\b/i
+      /\b(\d+)\s*Zwischenstopps?\b/i
     );
 
     if (match) {
@@ -567,7 +567,7 @@
     }
 
     match = text.match(
-      /\b(\d+)\s+stops?\b/i
+      /\b(\d+)\s*stops?\b/i
     );
 
     if (match) {
@@ -589,8 +589,8 @@
      * and the equivalent English "stop(s)" form.
      */
     const patterns = [
-      /\b\d+\s+Zwischenstopps?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i,
-      /\b\d+\s+stops?\s+([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i
+      /\b\d+\s*Zwischenstopps?\s*([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i,
+      /\b\d+\s*stops?\s*([A-Z]{3}(?:\s*,\s*[A-Z]{3})*)\b/i
     ];
 
     for (const regex of patterns) {
@@ -1448,7 +1448,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.16',
+        version: '1.6.17',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
