@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.18
+// @version      1.6.19
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.18',
+    scriptVersion: '1.6.19',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -53,6 +53,7 @@
     ready: false,
     pageCompleted: false,
     userBypassedLock: false,
+    captureSessionId: '',
     readyTimer: null
   };
 
@@ -1449,6 +1450,20 @@
       .join(' | ');
   }
 
+  function createCaptureSessionId() {
+    const randomPart =
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '').slice(0, 10)
+        : Math.random().toString(36).slice(2, 12);
+
+    return (
+      new Date().toISOString().replace(/[-:.TZ]/g, '') +
+      '_' +
+      randomPart
+    );
+  }
+
   function sendPendingResults() {
     if (state.sending) {
       scheduleSend();
@@ -1505,8 +1520,9 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.18',
+        version: '1.6.19',
         page: window.location.href,
+        capture_session_id: state.captureSessionId,
         sent_at: new Date().toISOString()
       },
       results: pending
@@ -1876,6 +1892,7 @@
       state.lastSuccessfulSendAt = 0;
       state.pageCompleted = false;
       state.userBypassedLock = false;
+      state.captureSessionId = createCaptureSessionId();
       clearReadyState('New search — waiting for results');
 
       setTimeout(scanPage, 2000);
@@ -1905,6 +1922,7 @@
     state.lastResultChangeAt = Date.now();
     state.pageCompleted = false;
     state.userBypassedLock = false;
+    state.captureSessionId = createCaptureSessionId();
     createInteractionBlocker();
     createBadge();
     clearReadyState('Waiting for Skyscanner results');
