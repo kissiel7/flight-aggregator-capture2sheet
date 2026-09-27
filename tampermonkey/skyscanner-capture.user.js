@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.11
+// @version      1.6.12
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.11',
+    scriptVersion: '1.6.12',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -1119,6 +1119,36 @@
     };
   }
 
+  function getStableResultSnapshot(result) {
+    return {
+      dedupe_key: result.dedupe_key,
+      itinerary_key: result.itinerary_key,
+      origin: result.origin,
+      destination: result.destination,
+      out_departure_dt: result.out_departure_dt,
+      out_arrival_dt: result.out_arrival_dt,
+      out_duration: result.out_duration,
+      out_stops: result.out_stops,
+      out_stop_airports: result.out_stop_airports,
+      out_airlines: result.out_airlines,
+      out_self_transfer: result.out_self_transfer,
+      in_departure_dt: result.in_departure_dt,
+      in_arrival_dt: result.in_arrival_dt,
+      in_duration: result.in_duration,
+      in_stops: result.in_stops,
+      in_stop_airports: result.in_stop_airports,
+      in_airlines: result.in_airlines,
+      in_self_transfer: result.in_self_transfer,
+      adults: result.adults,
+      children: result.children,
+      cabin: result.cabin,
+      price: result.price,
+      total_price: result.total_price,
+      currency: result.currency,
+      config_url: result.config_url
+    };
+  }
+
   function scanPage() {
     const candidates = findCandidateElements();
     state.lastCandidateCount = candidates.length;
@@ -1156,12 +1186,9 @@
        * the timestamp is new, causing needless re-sends and inflated
        * seen_count values in the spreadsheet.
        */
-      const comparable = {
-        ...result,
-        captured_at_client: ''
-      };
-
-      const serialized = JSON.stringify(comparable);
+      const serialized = JSON.stringify(
+        getStableResultSnapshot(result)
+      );
       const previous = state.discovered.get(result.dedupe_key);
 
       if (!previous || previous.serialized !== serialized) {
@@ -1294,7 +1321,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.11',
+        version: '1.6.12',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1326,10 +1353,9 @@
             if (state.discovered.has(result.dedupe_key)) {
               state.sentSnapshot.set(
                 result.dedupe_key,
-                JSON.stringify({
-                  ...result,
-                  captured_at_client: ''
-                })
+                JSON.stringify(
+                  getStableResultSnapshot(result)
+                )
               );
             }
           }
