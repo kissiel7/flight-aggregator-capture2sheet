@@ -2,14 +2,16 @@
  * Flight Aggregator Capture - Skyscanner Collector Backend
  *
  * Target spreadsheet: exact Google Drive name "Flight Aggregator Capture"
- * Target tab: "Skyscanner Results"
+ * Target tab: "Results"
  */
 
 const CONFIG = {
   SPREADSHEET_NAME: 'Flight Aggregator Capture',
   SHEET_NAME: 'Results',
   FILTER_SHEET_NAME: 'Guide & Filters',
-  API_KEY_PROPERTY: 'SKYSCANNER_API_KEY'
+  API_KEY_PROPERTY: 'SKYSCANNER_API_KEY',
+  RAW_LOG_ENABLED: true,
+  RAW_LOG_SUFFIX: ' - Raw'
 };
 
 const NUMERIC_FIELDS = new Set([
@@ -261,6 +263,36 @@ function doPost(e) {
 
     SpreadsheetApp.flush();
 
+    let rawLog = {
+      ok: false,
+      error: ''
+    };
+
+    try {
+      rawLog = appendRawCaptureLog_(
+        spreadsheet,
+        payload,
+        incoming,
+        outcomes,
+        filters,
+        serverNow
+      );
+    } catch (rawLogError) {
+      rawLog = {
+        ok: false,
+        error: String(
+          rawLogError && rawLogError.message
+            ? rawLogError.message
+            : rawLogError
+        )
+      };
+
+      console.error(
+        'Raw capture log failed:',
+        rawLogError
+      );
+    }
+
     return jsonResponse_({
       ok: true,
       spreadsheet: spreadsheet.getName(),
@@ -272,7 +304,8 @@ function doPost(e) {
       filtered,
       filteredByReason,
       outcomes,
-      activeFilters: filters.active
+      activeFilters: filters.active,
+      rawLog
     });
   } catch (error) {
     console.error(error);
@@ -847,6 +880,244 @@ function formatSheet_(sheet) {
   Object.entries(widths).forEach(([name, width]) => {
     sheet.setColumnWidth(column(name), width);
   });
+}
+
+function rawLogMonth_(date, spreadsheet) {
+  const timeZone =
+    spreadsheet.getSpreadsheetTimeZone() ||
+    Session.getScriptTimeZone() ||
+    'Europe/Berlin';
+
+  return Utilities.formatDate(
+    date,
+    timeZone,
+    'yyyy-MM'
+  );
+}
+
+function rawLogTimestamp_(date, spreadsheet) {
+  const timeZone =
+    spreadsheet.getSpreadsheetTimeZone() ||
+    Session.getScriptTimeZone() ||
+    'Europe/Berlin';
+
+  return Utilities.formatDate(
+    date,
+    timeZone,
+    "yyyy-MM-dd'T'HH:mm:ssXXX"
+  );
+}
+
+function getRawLogFile_(spreadsheet, date) {
+  const spreadsheetFile = DriveApp.getFileById(
+    spreadsheet.getId()
+  );
+
+  const parents = spreadsheetFile.getParents();
+  const folder = parents.hasNext()
+    ? parents.next()
+    : DriveApp.getRootFolder();
+
+  const fileName =
+    spreadsheet.getName() +
+    CONFIG.RAW_LOG_SUFFIX +
+    ' ' +
+    rawLogMonth_(date, spreadsheet) +
+    '.txt';
+
+  const matches = folder.getFilesByName(fileName);
+
+  if (matches.hasNext()) {
+    return {
+      file: matches.next(),
+      fileName
+    };
+  }
+
+  const file = folder.createFile(
+    fileName,
+    '',
+    MimeType.PLAIN_TEXT
+  );
+
+  return {
+    file,
+    fileName
+  };
+}
+
+function rawLogParsedResult_(result) {
+  const parsed = {};
+
+  SCHEMA.forEach(column => {
+    const field = column.field;
+
+    if (
+      field === 'first_seen' ||
+      field === 'last_seen' ||
+      field === 'seen_count' ||
+      field === 'raw_text'
+    ) {
+      return;
+    }
+
+    const value = result[field];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ''
+    ) {
+      parsed[field] = value;
+    }
+  });
+
+  return parsed;
+}
+
+function buildRawCaptureBlock_(
+  spreadsheet,
+  payload,
+  incoming,
+  outcomes,
+  filters,
+  serverNow
+) {
+  const client = payload.client || {};
+  const outcomeByKey = new Map();
+
+  (outcomes || []).forEach(outcome => {
+    if (!outcome || !outcome.dedupe_key) return;
+    outcomeByKey.set(
+      String(outcome.dedupe_key),
+      outcome
+    );
+  });
+
+  const lines = [];
+
+  lines.push(
+    '================================================================================'
+  );
+  lines.push(
+    'CAPTURE ' +
+    rawLogTimestamp_(serverNow, spreadsheet)
+  );
+  lines.push(
+    'Session: ' +
+    String(client.capture_session_id || 'unknown')
+  );
+  lines.push(
+    'Collector: ' +
+    String(client.version || 'unknown')
+  );
+  lines.push(
+    'Page: ' +
+    String(client.page || '')
+  );
+  lines.push(
+    'Received: ' +
+    String(incoming.length)
+  );
+  lines.push(
+    'Filters: ' +
+    JSON.stringify({
+      maxOutboundStops: filters.maxOutboundStops,
+      maxInboundStops: filters.maxInboundStops,
+      maxPricePP: filters.maxPricePP,
+      maxTotalPrice: filters.maxTotalPrice,
+      selfTransferAllowed: filters.selfTransferAllowed
+    })
+  );
+  lines.push(
+    '================================================================================'
+  );
+
+  incoming.forEach((result, index) => {
+    const key = String(result.dedupe_key || '');
+    const outcome = outcomeByKey.get(key) || {};
+
+    lines.push('');
+    lines.push(
+      'RESULT ' +
+      String(index + 1) +
+      '/' +
+      String(incoming.length)
+    );
+    lines.push('Dedupe key: ' + key);
+    lines.push(
+      'Outcome: ' +
+      String(outcome.status || 'unknown').toUpperCase()
+    );
+
+    if (outcome.reason) {
+      lines.push(
+        'Reason: ' +
+        String(outcome.reason)
+      );
+    }
+
+    lines.push(
+      'Parsed: ' +
+      JSON.stringify(rawLogParsedResult_(result))
+    );
+    lines.push('RAW:');
+    lines.push(
+      String(result.raw_text || '')
+    );
+    lines.push(
+      '--------------------------------------------------------------------------------'
+    );
+  });
+
+  lines.push('');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+function appendRawCaptureLog_(
+  spreadsheet,
+  payload,
+  incoming,
+  outcomes,
+  filters,
+  serverNow
+) {
+  if (!CONFIG.RAW_LOG_ENABLED) {
+    return {
+      ok: false,
+      disabled: true
+    };
+  }
+
+  const target = getRawLogFile_(
+    spreadsheet,
+    serverNow
+  );
+
+  const block = buildRawCaptureBlock_(
+    spreadsheet,
+    payload,
+    incoming,
+    outcomes,
+    filters,
+    serverNow
+  );
+
+  const existing = target.file
+    .getBlob()
+    .getDataAsString('UTF-8');
+
+  target.file.setContent(
+    existing + block
+  );
+
+  return {
+    ok: true,
+    fileName: target.fileName,
+    fileId: target.file.getId()
+  };
 }
 
 function jsonResponse_(object) {
