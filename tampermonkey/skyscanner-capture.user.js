@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Skyscanner -> Google Sheets Collector
 // @namespace    flight-aggregator-capture2sheet
-// @version      1.6.14
+// @version      1.6.15
 // @description  Capture Skyscanner results into Google Sheets via Apps Script
 // @match        https://www.skyscanner.com/*
 // @match        https://www.skyscanner.de/*
@@ -19,7 +19,7 @@
   'use strict';
 
   const CONFIG = {
-    scriptVersion: '1.6.14',
+    scriptVersion: '1.6.15',
     scanDelayMs: 2500,
     sendDelayMs: 1500,
     minSendIntervalMs: 4000,
@@ -37,6 +37,8 @@
     totalServerInserted: 0,
     totalServerUpdated: 0,
     totalServerFiltered: 0,
+    serverOutcomeByKey: new Map(),
+    rejectedByReason: {},
     lastStatus: 'Starting',
     lastCandidateCount: 0,
     lastPendingCount: 0,
@@ -1324,6 +1326,59 @@
     state.sendTimer = setTimeout(sendPendingResults, CONFIG.sendDelayMs);
   }
 
+  function refreshOutcomeCounters() {
+    let inserted = 0;
+    let updated = 0;
+    let rejected = 0;
+    const reasons = {};
+
+    for (const outcome of state.serverOutcomeByKey.values()) {
+      if (!outcome) continue;
+
+      if (outcome.status === 'inserted') {
+        inserted++;
+      } else if (outcome.status === 'updated') {
+        updated++;
+      } else if (outcome.status === 'rejected') {
+        rejected++;
+        const reason = outcome.reason || 'other';
+        reasons[reason] = (reasons[reason] || 0) + 1;
+      }
+    }
+
+    state.totalServerInserted = inserted;
+    state.totalServerUpdated = updated;
+    state.totalServerFiltered = rejected;
+    state.rejectedByReason = reasons;
+  }
+
+  function formatRejectReasons() {
+    const labels = {
+      outbound_stops: 'Stops',
+      inbound_stops: 'Stops',
+      outbound_stops_missing: 'Stops?',
+      inbound_stops_missing: 'Stops?',
+      price_pp: 'Price',
+      price_pp_missing: 'Price?',
+      price_total: 'Total',
+      price_total_missing: 'Total?',
+      self_transfer: 'Self-tr'
+    };
+
+    const merged = {};
+
+    Object.entries(state.rejectedByReason || {}).forEach(
+      ([reason, count]) => {
+        const label = labels[reason] || reason;
+        merged[label] = (merged[label] || 0) + Number(count || 0);
+      }
+    );
+
+    return Object.entries(merged)
+      .map(([label, count]) => `${label}: ${count}`)
+      .join(' | ');
+  }
+
   function sendPendingResults() {
     if (state.sending) {
       scheduleSend();
@@ -1378,7 +1433,7 @@
       apiKey: API_KEY,
       client: {
         name: 'Skyscanner Tampermonkey Collector',
-        version: '1.6.14',
+        version: '1.6.15',
         page: window.location.href,
         sent_at: new Date().toISOString()
       },
@@ -1417,9 +1472,26 @@
             }
           }
 
-          state.totalServerInserted += Number(body.inserted || 0);
-          state.totalServerUpdated += Number(body.updated || 0);
-          state.totalServerFiltered += Number(body.filtered || 0);
+          if (Array.isArray(body.outcomes)) {
+            for (const outcome of body.outcomes) {
+              if (!outcome || !outcome.dedupe_key) continue;
+
+              state.serverOutcomeByKey.set(
+                String(outcome.dedupe_key),
+                {
+                  status: String(outcome.status || ''),
+                  reason: String(outcome.reason || '')
+                }
+              );
+            }
+
+            refreshOutcomeCounters();
+          } else {
+            // Compatibility fallback for an older deployed Apps Script.
+            state.totalServerInserted += Number(body.inserted || 0);
+            state.totalServerUpdated += Number(body.updated || 0);
+            state.totalServerFiltered += Number(body.filtered || 0);
+          }
           state.lastPendingCount = getResultsNeedingSend().length;
           state.lastSuccessfulSendAt = Date.now();
           state.ready = false;
@@ -1610,6 +1682,9 @@
       <div><b>Version:</b> ${escapeHtml(CONFIG.scriptVersion)}</div>
       <div><b>Cards detected:</b> ${state.lastCandidateCount}</div>
       <div><b>INS / UPD / REJ:</b> ${state.totalServerInserted} / ${state.totalServerUpdated} / ${state.totalServerFiltered}</div>
+      ${state.totalServerFiltered > 0 && formatRejectReasons()
+        ? `<div style="white-space:nowrap"><b>REJ:</b> ${escapeHtml(formatRejectReasons())}</div>`
+        : ''}
       <div style="white-space:nowrap"><b>Backend:</b> ${escapeHtml(state.backendHealth)}</div>
       ${errorLine}
       ${overrideButton}
@@ -1714,6 +1789,8 @@
       state.totalServerInserted = 0;
       state.totalServerUpdated = 0;
       state.totalServerFiltered = 0;
+      state.serverOutcomeByKey.clear();
+      state.rejectedByReason = {};
       state.lastCandidateCount = 0;
       state.lastPendingCount = 0;
       state.lastResultChangeAt = Date.now();
