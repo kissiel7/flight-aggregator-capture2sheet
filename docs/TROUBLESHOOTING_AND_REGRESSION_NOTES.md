@@ -6,7 +6,7 @@ It summarizes bugs already encountered, their root causes, the fixes that worked
 
 Current implementation reviewed against `main`:
 
-- Tampermonkey collector: **v1.6.13**
+- Tampermonkey collector: **v1.6.14**
 - Apps Script backend: `apps-script/Code.gs`
 - Spreadsheet: `Flight Aggregator Capture`
 - Result tab: `Results`
@@ -865,6 +865,43 @@ When the same card contains both a unit price and an aggregate price, parser pre
 
 Do not add `Gesamtpreis`, `Gesamt`, or `Total cost` to the generic per-passenger price patterns.
 
+
+## 5.22 Accessibility labels replaced visible card text and caused false filter rejections
+
+**Symptom**
+
+A Skyscanner page could show valid one-stop flights below the configured price limit, while the collector reported:
+
+```text
+Cards detected: > 0
+INS / UPD / REJ: 0 / 0 / all
+Backend: OK
+```
+
+**Root cause**
+
+`getResultText()` previously returned only matching accessibility-label text whenever such labels were present.
+
+On some Skyscanner layouts those labels contain only summary/price information. Important rendered fields such as:
+
+- stop count;
+- stop airport;
+- some flight-detail text
+
+can exist only in the visible card text.
+
+That could leave `out_stops` blank. With `Max. outbound stops` active, Apps Script correctly rejected the result as a missing filter-critical field.
+
+**Fix**
+
+Tampermonkey 1.6.14 now treats visible rendered card text as the base source and appends relevant accessibility labels only when they add information not already present.
+
+**Permanent rule**
+
+Accessibility text is supplemental evidence, not a replacement for rendered card text.
+
+When filter-critical fields are extracted from the page, the parser must preserve all available rendered content before applying filters.
+
 ## 6. Mandatory regression checklist after Tampermonkey changes
 
 Run this checklist before considering a userscript change complete.
@@ -955,6 +992,7 @@ Inspect at least one written row:
 | Stuck on `Sent — checking for more results` while backend is OK | check whether volatile fields entered the stable comparison snapshot |
 | Price sorts lexically instead of numerically | payload type coercion, not cell display format |
 | All new multi-traveller results are REJ despite low visible PP prices | verify per-passenger parsing is not using total price |
+| All visible valid flights are REJ while Backend is OK | verify visible card text was not replaced by partial accessibility-label text; inspect missing stop/price fields |
 | Destination is TENE instead of TFS/TFN | parser fell back to search-area code |
 | Stop count exists but OStops/IStops blank | stop-airport parsing regression |
 | Existing rows disappear after filter changes | backend filtering behavior is wrong; filters must not delete |
